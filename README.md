@@ -77,6 +77,19 @@ Then point DNS (`<domain>` **and** `*.<domain>`) at the host, sign in, add an
 agent, and run its installer on the target. Full runbook:
 [`rctunnel-panel/docs/INSTALL.md`](rctunnel-panel/docs/INSTALL.md).
 
+## Update
+
+To update an existing install in place — preserves all data and secrets,
+rebuilds from source, recreates only what changed (Postgres/OpenSearch/Caddy keep
+running), runs schema migrations on boot, and republishes the agent for OTA:
+
+```bash
+cd <repo> && git pull
+sudo bash rctunnel-panel/deploy/update-server.sh           # --check to preview versions, --yes to skip the prompt
+```
+
+Connected agents pick up the new agent version automatically.
+
 ## Develop
 
 The panel is a standard Python app:
