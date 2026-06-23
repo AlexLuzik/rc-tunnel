@@ -26,6 +26,30 @@ log = logging.getLogger("rctunnel_panel.control")
 
 RENEW_COOLDOWN_SECS = 60   # min seconds between honored cert-renewal requests per connection
 
+# Flapping detection: many reconnects of the same identity in a short window can
+# signal a stolen cert being used in parallel with the real agent (both get evicted
+# on connect, so they fight). Raise an audit alert (rate-limited per agent).
+_FLAP_WINDOW = 120
+_FLAP_MAX = 6
+_FLAP_ALERT_COOLDOWN = 600
+_flap_hist: dict[int, list[float]] = {}
+_flap_last_alert: dict[int, float] = {}
+
+
+def _note_connect(agent_id: int, aname: str, team_id: int | None) -> None:
+    import time
+    now = time.monotonic()
+    h = _flap_hist.setdefault(agent_id, [])
+    h.append(now)
+    h[:] = [t for t in h if t > now - _FLAP_WINDOW]
+    if len(h) > _FLAP_MAX and now - _flap_last_alert.get(agent_id, 0.0) > _FLAP_ALERT_COOLDOWN:
+        _flap_last_alert[agent_id] = now
+        log.warning("agent %s is flapping: %d reconnects in %ds (possible stolen cert)",
+                    agent_id, len(h), _FLAP_WINDOW)
+        from .. import logs
+        logs.audit(actor=f"agent.{agent_id}", action="auth", label="agent.flapping",
+                   target=aname or f"agent.{agent_id}", team_id=team_id)
+
 
 def build_ssl_context() -> ssl.SSLContext:
     """Server-side mTLS: present our server cert, require + verify client certs."""
@@ -128,6 +152,7 @@ async def _handle(websocket, manager: ConnectionManager) -> None:
     log.info("agent %s connected", agent_id)
     from .. import logs
     logs.uptime(agent_id=agent_id, agent=aname, event="connect", team_id=ateam)
+    _note_connect(agent_id, aname, ateam)   # flapping detection (possible stolen-cert signal)
     ping_task = asyncio.create_task(_ping_loop(websocket, agent_id))
     loop = asyncio.get_running_loop()
     last_renew = 0.0

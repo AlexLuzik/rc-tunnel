@@ -29,6 +29,7 @@ def render_rctd(node: Node) -> str:
         f'cert:    "{pki}/server.crt"\n'
         f'key:     "{pki}/server.key"\n'
         f'ca:      "{pki}/ca.crt"\n'
+        f'revoked: "{pki}/revoked-serials"\n'
     )
 
 

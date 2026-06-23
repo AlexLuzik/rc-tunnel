@@ -512,6 +512,8 @@ def _boot_guard() -> None:
         log.error("crash-loop detected (%d boots/120s) — rolling back OTA", len(attempts))
         for bak in baks:
             try:
+                if bak.name.endswith(".py.bak"):
+                    compile(bak.read_bytes(), bak.name, "exec")   # don't restore a corrupt .bak
                 shutil.copy2(bak, bak.with_suffix(""))   # foo.py.bak -> foo.py
             except Exception:  # noqa: BLE001
                 pass

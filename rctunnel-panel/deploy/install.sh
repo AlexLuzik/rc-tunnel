@@ -60,7 +60,9 @@ chmod +x "$INSTALL_DIR/rctc"
 echo "[rctunnel] setting up python venv"
 python3 -m venv "$INSTALL_DIR/venv"
 "$INSTALL_DIR/venv/bin/pip" install --quiet --upgrade pip
-"$INSTALL_DIR/venv/bin/pip" install --quiet websockets cryptography
+# pin to compatible majors so an agent install can't silently pull a yanked/broken
+# release (matches the panel's ranges)
+"$INSTALL_DIR/venv/bin/pip" install --quiet "websockets>=13,<16" "cryptography>=44"
 
 if [ "$NO_SERVICE" = "1" ] || ! command -v systemctl >/dev/null 2>&1; then
   echo "[rctunnel] no systemd (or --no-service): run manually:"

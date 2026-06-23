@@ -58,11 +58,15 @@ def test_enroll_lifecycle():
             assert ag.token_used is True
             assert ag.cert_serial == str(serial1)
 
-        # --- admin reissue mints a fresh single-use token ---
+        # --- admin reissue mints a fresh single-use token + revokes the old cert ---
         rr = c.post(f"/api/agents/{a2id}/reissue-token")
         assert rr.status_code == 200, rr.text
         newtok = rr.json()["agent_token"]
         assert newtok != tok
+        # the old serial is written to the data-plane (rctd) revocation file
+        from pathlib import Path as _P
+        revoked = (_P(os.environ["RCTUNNEL_PKI_DIR"]) / "revoked-serials").read_text()
+        assert str(serial1) in revoked
         # the superseded token now matches no agent at all
         assert c.post("/api/agents/enroll", json={"bootstrap_token": tok, "csr_pem": _csr()}).status_code == 401
         assert c.post("/api/agents/enroll", json={"bootstrap_token": newtok, "csr_pem": _csr(),

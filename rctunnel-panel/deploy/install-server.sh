@@ -272,6 +272,7 @@ cert:    "/var/lib/rctunnel-panel/pki/server.crt"
 key:     "/var/lib/rctunnel-panel/pki/server.key"
 ca:      "/var/lib/rctunnel-panel/pki/ca.crt"
 grant_secret: "${GRANT_SECRET}"
+revoked: "/var/lib/rctunnel-panel/pki/revoked-serials"
 EOF
 chmod 600 /etc/rctunnel-panel/rctd.yml
 
