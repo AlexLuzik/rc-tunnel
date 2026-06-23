@@ -18,6 +18,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -35,7 +36,46 @@ type Config struct {
 	StatsAddr    string // e.g. "127.0.0.1:7401" — stats JSON for the panel poller
 	Token        string // shared auth token
 	GrantSecret  string // if set, clients must present a valid panel-signed grant
+	RevokedFile  string // optional: file of revoked cert serials (one per line), hot-reloaded
 	TLS          *tls.Config
+}
+
+// revoker hot-reloads a newline-delimited set of revoked cert serials (decimal,
+// matching the panel's str(serial)). The panel appends to it on reissue/delete so
+// a stolen cert is rejected at the DATA plane too, not just the panel control plane.
+type revoker struct {
+	path   string
+	mu     sync.Mutex
+	set    map[string]bool
+	mtime  time.Time
+	loaded bool
+}
+
+func (r *revoker) revoked(serial string) bool {
+	if r == nil || r.path == "" || serial == "" {
+		return false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	fi, err := os.Stat(r.path)
+	if err != nil {
+		if !r.loaded {
+			r.set, r.loaded = map[string]bool{}, true
+		}
+		return false // file absent => nothing revoked
+	}
+	if !r.loaded || fi.ModTime().After(r.mtime) {
+		m := map[string]bool{}
+		if data, e := os.ReadFile(r.path); e == nil {
+			for _, line := range strings.Split(string(data), "\n") {
+				if s := strings.TrimSpace(line); s != "" {
+					m[s] = true
+				}
+			}
+		}
+		r.set, r.mtime, r.loaded = m, fi.ModTime(), true
+	}
+	return r.set[serial]
 }
 
 type pairing struct {
@@ -55,11 +95,26 @@ func tokenEqual(got, want string) bool {
 // and the host nofile ulimit is the same order of magnitude.
 const maxConns = 60000
 
+// maxConnsPerCN caps concurrent public connections attributable to one identity,
+// so a single tenant can't drain the global pool and starve other tenants.
+const maxConnsPerCN = 10000
+
 // certCN returns the verified mTLS client cert CN, or "" if none.
 func certCN(c net.Conn) string {
 	if tc, ok := c.(*tls.Conn); ok {
 		if cs := tc.ConnectionState(); len(cs.PeerCertificates) > 0 {
 			return cs.PeerCertificates[0].Subject.CommonName
+		}
+	}
+	return ""
+}
+
+// certSerial returns the peer cert serial as a decimal string (matching the
+// panel's str(serial)), or "" if no client cert.
+func certSerial(c net.Conn) string {
+	if tc, ok := c.(*tls.Conn); ok {
+		if cs := tc.ConnectionState(); len(cs.PeerCertificates) > 0 {
+			return cs.PeerCertificates[0].SerialNumber.String()
 		}
 	}
 	return ""
@@ -80,6 +135,9 @@ type Server struct {
 	stats   sync.Map            // proxy name -> *counters
 	clients map[string]*Client  // clientID -> live control connection (for reconnect eviction)
 	connSem chan struct{}       // bounds concurrent connection handlers (DoS backstop)
+	cnMu    sync.Mutex
+	perCN   map[string]int // live public conns per owner identity (fairness)
+	rev     *revoker       // revoked cert serials (nil if not configured)
 }
 
 // acquire reserves a connection slot; false if at capacity (caller should drop).
@@ -94,6 +152,34 @@ func (s *Server) acquire() bool {
 
 func (s *Server) release() { <-s.connSem }
 
+// acquireCN reserves a global slot AND a per-identity slot, so one tenant's
+// public traffic can't monopolize the whole pool and starve other tenants.
+func (s *Server) acquireCN(cn string) bool {
+	if !s.acquire() {
+		return false
+	}
+	s.cnMu.Lock()
+	if s.perCN[cn] >= maxConnsPerCN {
+		s.cnMu.Unlock()
+		s.release()
+		return false
+	}
+	s.perCN[cn]++
+	s.cnMu.Unlock()
+	return true
+}
+
+func (s *Server) releaseCN(cn string) {
+	s.cnMu.Lock()
+	if s.perCN[cn] <= 1 {
+		delete(s.perCN, cn)
+	} else {
+		s.perCN[cn]--
+	}
+	s.cnMu.Unlock()
+	s.release()
+}
+
 type counters struct {
 	in   int64
 	out  int64
@@ -104,7 +190,8 @@ type counters struct {
 // New builds a Server.
 func New(cfg Config) *Server {
 	return &Server{cfg: cfg, vhosts: map[string]*proxyRef{}, tcp: map[int]*proxyRef{},
-		clients: map[string]*Client{}, connSem: make(chan struct{}, maxConns)}
+		clients: map[string]*Client{}, connSem: make(chan struct{}, maxConns),
+		perCN: map[string]int{}, rev: &revoker{path: cfg.RevokedFile}}
 }
 
 // Run starts all listeners and blocks.
@@ -214,6 +301,10 @@ func (s *Server) handleControl(raw net.Conn) {
 	}
 	if s.cfg.Token != "" && !tokenEqual(hello.Token, s.cfg.Token) {
 		_ = proto.WriteMsg(raw, &proto.Msg{Type: proto.TypeHelloResp, Error: "bad token"})
+		return
+	}
+	if s.rev.revoked(certSerial(raw)) {
+		_ = proto.WriteMsg(raw, &proto.Msg{Type: proto.TypeHelloResp, Error: "revoked certificate"})
 		return
 	}
 	// Stable client identity: prefer the verified mTLS cert CN (one agent =
@@ -457,11 +548,11 @@ func (c *Client) acceptPublic(ln net.Listener, p proto.ProxySpec, e *regEntry) {
 		if err != nil {
 			return
 		}
-		if !c.s.acquire() {
+		if !c.s.acquireCN(c.cn) {
 			_ = pub.Close()
 			continue
 		}
-		go func(pub net.Conn) { defer c.s.release(); c.bridge(pub, p.Name, e) }(pub)
+		go func(pub net.Conn) { defer c.s.releaseCN(c.cn); c.bridge(pub, p.Name, e) }(pub)
 	}
 }
 
@@ -600,6 +691,10 @@ func (s *Server) handleWork(conn net.Conn) {
 		return
 	}
 	if s.cfg.Token != "" && !tokenEqual(m.Token, s.cfg.Token) {
+		conn.Close()
+		return
+	}
+	if s.rev.revoked(certSerial(conn)) {
 		conn.Close()
 		return
 	}

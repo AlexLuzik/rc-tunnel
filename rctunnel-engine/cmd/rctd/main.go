@@ -56,6 +56,7 @@ func main() {
 	certFile := flag.String("cert", "", "server TLS cert (PEM)")
 	keyFile := flag.String("key", "", "server TLS key (PEM)")
 	caFile := flag.String("ca", "", "client CA (PEM); if set, mTLS is required")
+	revoked := flag.String("revoked", "", "file of revoked cert serials (one per line); hot-reloaded")
 	flag.Parse()
 
 	if *cfgPath != "" {
@@ -78,6 +79,7 @@ func main() {
 		set(certFile, "cert")
 		set(keyFile, "key")
 		set(caFile, "ca")
+		set(revoked, "revoked")
 	}
 
 	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
@@ -120,6 +122,7 @@ func main() {
 		StatsAddr:    *stats,
 		Token:        *token,
 		GrantSecret:  *grantSecret,
+		RevokedFile:  *revoked,
 		TLS:          tlsCfg,
 	})
 	log.Fatal(srv.Run())
