@@ -519,7 +519,9 @@ echo "${c_g}${c_b}  RC-Tunnel is installed.${c_reset}"
 echo
 echo "  Panel:   https://${DOMAIN}/login"
 echo "  Admin:   ${ADMIN_EMAIL}"
-[ "${GEN_PASS:-0}" = 1 ] && echo "  ${c_y}Password (generated): ${ADMIN_PASS}${c_reset}"
+# Print the generated password ONLY to the terminal, bypassing the tee'd log
+# file (which is world-readable) so the admin credential isn't persisted on disk.
+[ "${GEN_PASS:-0}" = 1 ] && printf '  %sPassword (generated): %s%s\n' "$c_y" "$ADMIN_PASS" "$c_reset" >/dev/tty
 echo
 echo "  Next steps:"
 echo "    1. DNS: point  ${DOMAIN}  AND  *.${DOMAIN}  (A records) at this host's public IP."

@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .. import ratelimit
 from ..config import get_settings
 from ..db import get_db
 from ..deps import check_team_access, current_user, get_ca
@@ -95,15 +96,22 @@ def delete_agent(agent_id: int, db: Session = Depends(get_db),
 
 
 @router.post("/enroll", response_model=EnrollResponse)
-def enroll(body: EnrollRequest, db: Session = Depends(get_db), ca: CA = Depends(get_ca)) -> EnrollResponse:
+def enroll(body: EnrollRequest, request: Request, db: Session = Depends(get_db),
+           ca: CA = Depends(get_ca)) -> EnrollResponse:
     """Public endpoint authenticated by the one-time bootstrap token.
 
     Agent sends a CSR (its public key); we sign it with the panel CA and return
     the agent cert + CA cert. The agent's private key never reaches us.
     """
+    # This is the only internet-facing endpoint that mints a cert; throttle bad
+    # tokens per-IP just like login, so it can't be used as a token-guessing oracle.
+    ip = request.client.host if request.client else None
+    ratelimit.guard(ip)
     agent = db.scalar(select(Agent).where(Agent.agent_token == body.bootstrap_token))
     if agent is None:
+        ratelimit.record_fail(ip)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid bootstrap token")
+    ratelimit.clear(ip)
     s = get_settings()
     try:
         cert_pem = ca.sign_csr(

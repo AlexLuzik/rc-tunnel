@@ -87,6 +87,8 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 UNIT
+# the unit embeds the agent bootstrap token — keep it root-only, not world-readable
+chmod 600 /etc/systemd/system/rctunnel-agent.service
 
 systemctl daemon-reload
 systemctl enable rctunnel-agent

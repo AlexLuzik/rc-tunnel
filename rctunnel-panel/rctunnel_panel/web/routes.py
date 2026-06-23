@@ -436,6 +436,15 @@ def fleet_page(request: Request, tab: str = "devices", db: Session = Depends(get
     return templates.TemplateResponse(request, "activity.html", ctx)
 
 
+def _csv_safe(v):
+    # Log fields (host/uri/actor/ip) come from external requests. Prefix any cell
+    # that a spreadsheet would treat as a formula so Excel/Sheets can't execute it.
+    s = "" if v is None else str(v)
+    if s[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + s
+    return s
+
+
 def _export(request: Request, db: Session, tab: str, fname: str):
     user = _user(request, db)
     if user is None:
@@ -448,7 +457,7 @@ def _export(request: Request, db: Session, tab: str, fname: str):
         w = csv.DictWriter(buf, fieldnames=cols)
         w.writeheader()
         for r in rows:
-            w.writerow(r)
+            w.writerow({k: _csv_safe(v) for k, v in r.items()})
     return StreamingResponse(io.BytesIO(buf.getvalue().encode()), media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{fname}"'})
 

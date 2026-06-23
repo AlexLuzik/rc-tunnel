@@ -2,11 +2,29 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from .models import AgentStatus, Role, TunnelType
+
+# Reject control chars and the characters that enable HTML/JS-string breakout when
+# a name is rendered into the UI. Defense-in-depth on top of template escaping.
+_NAME_BAD = re.compile(r"""[\x00-\x1f<>"'`\\]""")
+
+
+def _require_name(v: str) -> str:
+    v = (v or "").strip()
+    if not v:
+        raise ValueError("name must not be empty")
+    if _NAME_BAD.search(v):
+        raise ValueError("name may not contain < > \" ' ` \\ or control characters")
+    return v
+
+
+def _clean_optional_name(v: str | None) -> str | None:
+    return v if v is None else _require_name(v)
 
 
 # --- auth ---
@@ -52,11 +70,15 @@ class TeamCreate(BaseModel):
     subdomain_label: str | None = None      # auto-slugged from name if omitted
     quota_bytes: int | None = None
 
+    _strip_name = field_validator("name")(_require_name)
+
 
 class TeamUpdate(BaseModel):
     name: str | None = None
     subdomain_label: str | None = None
     quota_bytes: int | None = None      # suspension is derived from this (set 0 to force-suspend)
+
+    _strip_name = field_validator("name")(_clean_optional_name)
 
 
 class TeamOut(BaseModel):
@@ -90,13 +112,6 @@ class NodeOut(BaseModel):
 
 
 # --- agents ---
-def _require_name(v: str) -> str:
-    v = (v or "").strip()
-    if not v:
-        raise ValueError("name must not be empty")
-    return v
-
-
 class AgentCreate(BaseModel):
     name: str
     node_id: int | None = None   # optional: defaults to the single system node
@@ -151,6 +166,8 @@ class TunnelCreate(_TunnelOpts):
     remote_port: int | None = None
     subdomain: str | None = None
     custom_domains: str | None = None
+
+    _strip_name = field_validator("name")(_require_name)
 
 
 class TunnelUpdate(BaseModel):

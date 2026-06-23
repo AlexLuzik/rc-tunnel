@@ -32,7 +32,7 @@
             <td style="text-align:right;white-space:nowrap;">
               <input id="q{{ t.id }}" class="form-control form-control-sm d-inline-block" value="{{ (t.quota_bytes // 1048576) if t.quota_bytes else '' }}" placeholder="MB" style="width:74px;margin-right:5px;text-align:right;">
               <button type="button" onclick="setQuota({{ t.id }})" class="btn btn-success btn-sm rounded-pill px-3" style="margin-right:5px;">Save</button>
-              <button type="button" class="btn btn-outline-danger btn-sm rounded-pill px-3" onclick="armDel(this, () => delTeam({{ t.id }}, '{{ t.name }}'))"><i class="ti ti-trash" style="font-size:13px;"></i></button>
+              <button type="button" class="btn btn-outline-danger btn-sm rounded-pill px-3" onclick="armDel(this, () => delTeam({{ t.id }}, {{ t.name | tojson }}))"><i class="ti ti-trash" style="font-size:13px;"></i></button>
             </td>
           </tr>
         {% else %}<tr><td colspan="6" style="color:var(--bs-secondary-color);">No teams yet.</td></tr>{% endfor %}
@@ -64,7 +64,7 @@
                 <option value="admin" {% if u.role.value=='admin' %}selected{% endif %}>admin</option>
               </select>{% endif %}</td>
             <td><select class="form-select form-select-sm" style="max-width:160px;" onchange="setTeam({{ u.id }}, this.value)"><option value="">—</option>{% for t in teams %}<option value="{{ t.id }}" {% if t.id == u.team_id %}selected{% endif %}>{{ t.name }}</option>{% endfor %}</select></td>
-            <td style="text-align:right;">{% if u.id != user.id %}<button type="button" class="btn btn-outline-danger btn-sm rounded-pill px-3" onclick="armDel(this, () => delUser({{ u.id }}, '{{ u.email }}'))"><i class="ti ti-trash" style="font-size:13px;"></i></button>{% else %}<span style="color:var(--bs-secondary-color);font-size:.8rem;">you</span>{% endif %}</td>
+            <td style="text-align:right;">{% if u.id != user.id %}<button type="button" class="btn btn-outline-danger btn-sm rounded-pill px-3" onclick="armDel(this, () => delUser({{ u.id }}, {{ u.email | tojson }}))"><i class="ti ti-trash" style="font-size:13px;"></i></button>{% else %}<span style="color:var(--bs-secondary-color);font-size:.8rem;">you</span>{% endif %}</td>
           </tr>
         {% endfor %}
         </tbody>

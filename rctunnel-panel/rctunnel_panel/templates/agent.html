@@ -61,7 +61,7 @@
             <td style="text-align:right;white-space:nowrap;">
               {% if user.role.value != 'demo' %}
               <button type="button" onclick="toggleEdit({{ t.id }})" class="btn btn-outline-secondary btn-sm rounded-pill px-3" style="margin-right:5px;"><i class="ti ti-pencil" style="font-size:13px;margin-right:3px;"></i>Edit</button>
-              <button type="button" class="btn btn-outline-danger btn-sm rounded-pill px-3" onclick="armDel(this, () => delTunnel({{ t.id }}, '{{ t.name }}'))"><i class="ti ti-trash" style="font-size:13px;"></i></button>
+              <button type="button" class="btn btn-outline-danger btn-sm rounded-pill px-3" onclick="armDel(this, () => delTunnel({{ t.id }}, {{ t.name | tojson }}))"><i class="ti ti-trash" style="font-size:13px;"></i></button>
               {% else %}<span style="color:var(--bs-secondary-color);font-size:.8rem;">read-only</span>{% endif %}
             </td>
           </tr>
@@ -74,7 +74,7 @@
               <div style="min-width:120px;"><label style="font-size:.78rem;font-weight:500;margin-bottom:4px;display:block;">Bandwidth</label><input id="e_bw_{{ t.id }}" class="form-control form-control-sm" value="{{ t.bandwidth_limit or '' }}" placeholder="e.g. 1MB"></div>
               <label class="form-check" style="margin-bottom:6px;"><input id="e_enc_{{ t.id }}" class="form-check-input" type="checkbox" {% if t.use_encryption %}checked{% endif %}> <span style="font-size:.82rem;">enc</span></label>
               <label class="form-check" style="margin-bottom:6px;"><input id="e_cmp_{{ t.id }}" class="form-check-input" type="checkbox" {% if t.use_compression %}checked{% endif %}> <span style="font-size:.82rem;">cmp</span></label>
-              <button type="button" onclick="saveEdit({{ t.id }}, '{{ ty }}')" class="btn btn-success btn-sm rounded-pill px-3">Save</button>
+              <button type="button" onclick="saveEdit({{ t.id }}, {{ ty | tojson }})" class="btn btn-success btn-sm rounded-pill px-3">Save</button>
               <button type="button" onclick="toggleEdit({{ t.id }})" class="btn btn-outline-secondary btn-sm rounded-pill px-3">Cancel</button>
             </div>
           </td></tr>

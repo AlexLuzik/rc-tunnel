@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -21,8 +22,18 @@ from .web import routes as web_routes
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if get_settings().jwt_secret in ("", "change-me"):
+    s = get_settings()
+    if s.jwt_secret in ("", "change-me"):
         raise RuntimeError("RCTUNNEL_JWT_SECRET is unset/default — refusing to start with a forgeable signing key")
+    # Without a grant secret, rctd skips all per-agent ownership checks (cross-tenant
+    # data-plane isolation is OFF). Refuse to start in production (Postgres) and warn
+    # loudly in dev (SQLite), where the suite/quickstart legitimately run without it.
+    if not s.grant_secret:
+        if s.database_url.startswith("postgres"):
+            raise RuntimeError("RCTUNNEL_GRANT_SECRET is unset — data-plane tenant isolation would be "
+                               "disabled; refusing to start. Set it (and the matching rctd grant_secret).")
+        logging.getLogger(__name__).warning(
+            "RCTUNNEL_GRANT_SECRET is unset — data-plane tenant isolation is DISABLED (dev only).")
     init_db()       # clean-slate MVP; Alembic later
     get_ca()        # create/load the panel CA on startup
     yield

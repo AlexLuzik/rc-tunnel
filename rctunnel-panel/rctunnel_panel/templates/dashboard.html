@@ -40,7 +40,7 @@
             <td style="text-align:right;white-space:nowrap;">
               {% if user.role.value != 'demo' %}
               <button type="button" onclick="editAgent({{ a.id }})" class="btn btn-outline-secondary btn-sm rounded-pill px-3" style="margin-right:5px;"><i class="ti ti-pencil" style="font-size:13px;margin-right:3px;"></i>Edit</button>
-              <button type="button" class="btn btn-outline-danger btn-sm rounded-pill px-3" onclick="armDel(this, () => delAgent({{ a.id }}, '{{ a.name }}'))"><i class="ti ti-trash" style="font-size:14px;"></i></button>
+              <button type="button" class="btn btn-outline-danger btn-sm rounded-pill px-3" onclick="armDel(this, () => delAgent({{ a.id }}, {{ a.name | tojson }}))"><i class="ti ti-trash" style="font-size:14px;"></i></button>
               {% else %}<span style="color:var(--bs-secondary-color);font-size:.8rem;">read-only</span>{% endif %}
             </td>
           </tr>
