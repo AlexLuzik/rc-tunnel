@@ -1,11 +1,22 @@
-# rcpanel — public web + agent downloads + tunnel vhost.
-# NOTE: the agent control plane (port 8001) is mTLS and is NOT proxied here —
-# agents connect to <domain>:8001 directly. Open 8001 in the firewall.
+# RC-Tunnel — public web + agent downloads + tunnel vhost.
+# This mirrors what deploy/install-server.sh renders; the installer's copy is
+# authoritative. NOTE: the agent control plane (port 8001) is mTLS and is NOT
+# proxied here — agents connect to <domain>:8001 directly. Open 8001 in the firewall.
+
+{
+	email admin@rc-tunnel.com
+	# On-demand TLS is gated: Caddy asks the panel whether a host is a real tunnel
+	# before issuing a cert, so arbitrary *.<domain> names can't trigger issuance.
+	on_demand_tls {
+		ask http://127.0.0.1:8000/_ondemand
+	}
+}
 
 rc-tunnel.com {
-	# agent installer + binaries
+	encode zstd gzip
+	# agent installer + binaries (no directory browse — don't list artifacts)
 	handle_path /dl/* {
-		root * /var/www/rcpanel-dl
+		root * /var/www/rctunnel-panel-dl
 		file_server
 	}
 	# everything else -> master web/API
@@ -14,8 +25,11 @@ rc-tunnel.com {
 	}
 }
 
-# tunnel subdomains -> rctd vhost (http proxies created in the panel); up to 4 labels deep
+# tunnel subdomains -> rctd vhost (http proxies created in the panel); up to 5 labels deep
 *.rc-tunnel.com, *.*.rc-tunnel.com, *.*.*.rc-tunnel.com, *.*.*.*.rc-tunnel.com, *.*.*.*.*.rc-tunnel.com {
+	tls {
+		on_demand
+	}
 	log {
 		output file /var/lib/caddy/access.log { roll_size 50MiB roll_keep 3 }
 		format json

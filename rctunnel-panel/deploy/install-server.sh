@@ -289,7 +289,7 @@ ${DOMAIN} {
 	encode zstd gzip
 	handle_path /dl/* {
 		root * /var/www/rctunnel-panel-dl
-		file_server browse
+		file_server
 	}
 	handle {
 		reverse_proxy 127.0.0.1:8000

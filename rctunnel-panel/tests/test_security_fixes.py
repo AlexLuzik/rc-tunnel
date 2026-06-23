@@ -76,6 +76,24 @@ def test_security_fixes():
         r = c.get("/demo", follow_redirects=False)
         assert r.status_code == 303 and r.headers.get("location") == "/login"
 
+        # --- update_tunnel re-checks subdomain depth (was create-only) ---
+        rt = c.post(f"/api/agents/{aid}/tunnels",
+                    json={"name": "web1", "type": "http", "local_port": 8080, "subdomain": "ok"})
+        assert rt.status_code == 200, rt.text
+        tid = rt.json()["id"]
+        assert c.patch(f"/api/tunnels/{tid}", json={"subdomain": "a.b.c.d.e.f"}).status_code == 422
+
+        # --- JWT revocation on password change (token_version) ---
+        # (do this last with the cookie — it also invalidates the cookie session)
+        tok = c.post("/api/auth/login", json={"email": "admin@x.io", "password": "supersecret"}).json()["access_token"]
+        H = {"Authorization": f"Bearer {tok}"}
+        assert c.get("/api/auth/me", headers=H).status_code == 200
+        assert c.patch("/api/auth/me", headers=H,
+                       json={"current_password": "supersecret", "new_password": "supersecret2"}).status_code == 200
+        assert c.get("/api/auth/me", headers=H).status_code == 401   # old token revoked
+        assert c.post("/api/auth/login",
+                      json={"email": "admin@x.io", "password": "supersecret2"}).status_code == 200
+
         # --- /enroll rate-limit: bad tokens get throttled (429) after the window cap ---
         codes = []
         for _ in range(12):

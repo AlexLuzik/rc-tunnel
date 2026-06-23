@@ -42,13 +42,18 @@ def _validate(body: TunnelCreate, *, team_has_label: bool) -> None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "health_check_type must be tcp or http")
     if body.subdomain:
         _check_subdomain_labels(body.subdomain)
-        # team label (if any) consumes one of the allowed labels before the apex
-        labels = [p for p in body.subdomain.split(".") if p]
-        depth = len(labels) + (1 if team_has_label else 0)
-        maxd = get_settings().subdomain_max_depth
-        if depth > maxd:
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
-                                f"subdomain too deep ({depth} labels incl. team); max {maxd}")
+        _check_subdomain_depth(body.subdomain, team_has_label)
+
+
+def _check_subdomain_depth(subdomain: str, team_has_label: bool) -> None:
+    from ..config import get_settings
+    # team label (if any) consumes one of the allowed labels before the apex
+    labels = [p for p in subdomain.split(".") if p]
+    depth = len(labels) + (1 if team_has_label else 0)
+    maxd = get_settings().subdomain_max_depth
+    if depth > maxd:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            f"subdomain too deep ({depth} labels incl. team); max {maxd}")
 
 
 def _check_subdomain_labels(subdomain: str | None) -> None:
@@ -186,8 +191,13 @@ def update_tunnel(tunnel_id: int, body: TunnelUpdate, db: Session = Depends(get_
     fields = body.model_dump(exclude_unset=True)
     if fields.get("health_check_type") and fields["health_check_type"] not in ("tcp", "http"):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "health_check_type must be tcp or http")
-    if "subdomain" in fields:
+    if "subdomain" in fields and fields["subdomain"]:
+        from ..models import Team
         _check_subdomain_labels(fields["subdomain"])
+        team = db.get(Team, tunnel.agent.team_id) if tunnel.agent.team_id else None
+        _check_subdomain_depth(fields["subdomain"], bool(team and team.subdomain_label))
+        _check_subdomain_unique(db, fields["subdomain"], tunnel.agent.team_id, exclude_id=tunnel.id)
+    elif "subdomain" in fields:
         _check_subdomain_unique(db, fields["subdomain"], tunnel.agent.team_id, exclude_id=tunnel.id)
     if "custom_domains" in fields:
         _check_custom_domains(db, fields["custom_domains"], exclude_id=tunnel.id)

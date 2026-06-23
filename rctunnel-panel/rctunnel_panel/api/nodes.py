@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..db import get_db
-from ..deps import current_user, require_admin
+from ..deps import require_admin
 from ..models import Node
 from ..schemas import NodeCreate, NodeOut
 
@@ -32,7 +32,7 @@ def render_rctd(node: Node) -> str:
     )
 
 
-@router.get("", response_model=list[NodeOut], dependencies=[Depends(current_user)])
+@router.get("", response_model=list[NodeOut], dependencies=[Depends(require_admin)])
 def list_nodes(db: Session = Depends(get_db)) -> list[Node]:
     return list(db.scalars(select(Node)))
 
