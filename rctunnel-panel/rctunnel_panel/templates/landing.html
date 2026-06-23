@@ -40,8 +40,7 @@ a{text-decoration:none;}
 @keyframes rc-enter{from{transform:translateY(10px);opacity:0}to{transform:translateY(0);opacity:1}}
 .rc-enter{animation:rc-enter .5s cubic-bezier(.4,0,.2,1) both;}
 @media (prefers-reduced-motion: reduce){*{animation-duration:.001ms!important;transition-duration:.001ms!important;}.rc-card:hover{transform:none!important;}}
-@media (max-width:860px){.rc-hero-grid{grid-template-columns:1fr!important;gap:36px!important;}.rc-foot-grid{grid-template-columns:1fr 1fr!important;}}
-@media (max-width:520px){.rc-foot-grid{grid-template-columns:1fr!important;}}
+@media (max-width:860px){.rc-hero-grid{grid-template-columns:1fr!important;gap:36px!important;}}
 </style>
 </head>
 <body>
@@ -95,7 +94,7 @@ a{text-decoration:none;}
 
         <div style="display:flex;align-items:stretch;gap:8px;max-width:520px;">
           <div style="flex:1;display:flex;align-items:center;gap:9px;font-family:'JetBrains Mono',monospace;font-size:.82rem;background:var(--rc-card-bg);border:1px solid var(--bs-border-color);border-radius:11px;padding:11px 14px;overflow-x:auto;white-space:nowrap;box-shadow:0 1px 2px rgba(6,95,70,.05);">
-            <span style="color:var(--rc-green-600);flex:none;">$</span><span id="rcInstall" style="color:var(--bs-body-color);">sudo bash rctunnel-panel/deploy/install-server.sh</span>
+            <span style="color:var(--rc-green-600);flex:none;">$</span><span id="rcInstall" style="color:var(--bs-body-color);">git clone https://github.com/AlexLuzik/rc-tunnel && cd rc-tunnel && sudo bash rctunnel-panel/deploy/install-server.sh</span>
           </div>
           <button type="button" onclick="rcCopyInstall()" class="btn btn-outline-secondary rounded-pill" style="white-space:nowrap;border-color:var(--bs-border-color);color:var(--bs-body-color);flex:none;padding:0 16px;"><i id="rcCopyIcon" class="ti ti-copy" style="font-size:15px;"></i></button>
         </div>
@@ -223,7 +222,7 @@ a{text-decoration:none;}
           {'name':'http','desc':'Web apps with subdomains','bg':'rgba(16,185,129,.15)','color':'var(--rc-green-700)'},
           {'name':'https','desc':'Auto-TLS on every node','bg':'rgba(16,185,129,.15)','color':'var(--rc-green-700)'},
           {'name':'tcp','desc':'SSH, databases, raw ports','bg':'rgba(100,116,139,.18)','color':'#475569'},
-          {'name':'udp','desc':'DNS, game &amp; realtime','bg':'rgba(100,116,139,.18)','color':'#475569'}
+          {'name':'udp','desc':'DNS, game & realtime','bg':'rgba(100,116,139,.18)','color':'#475569'}
         ] %}
         <div class="rc-card rc-lift" style="padding:16px 18px;">
           <span style="display:inline-block;font-family:'JetBrains Mono',monospace;font-weight:600;font-size:.82rem;padding:2px 10px;border-radius:999px;background:{{ p.bg }};color:{{ p.color }};margin-bottom:9px;">{{ p.name }}</span>
@@ -283,7 +282,7 @@ a{text-decoration:none;}
         <div style="display:flex;flex-direction:column;gap:11px;">
           {% for i in [
             'Unlimited agents & tunnels',
-            'HTTP/HTTPS, TCP &amp; UDP',
+            'HTTP/HTTPS, TCP & UDP',
             'Teams, quotas & full audit log',
             'Live request & connection logs',
             'OTA fleet updates, full source under MIT'
@@ -333,42 +332,7 @@ a{text-decoration:none;}
 
   <!-- ===================== FOOTER ===================== -->
   <footer style="border-top:1px solid var(--bs-border-color);background:var(--rc-card-bg);">
-    <div style="max-width:1140px;margin:0 auto;padding:48px 24px 36px;display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:32px;" class="rc-foot-grid">
-      <div>
-        <a href="#top" style="display:flex;align-items:center;gap:9px;margin-bottom:12px;">
-          <span style="display:inline-flex;width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#34d399,#059669);align-items:center;justify-content:center;"><i class="ti ti-arrow-ramp-right-2" style="color:#fff;font-size:17px;"></i></span>
-          <span style="font-weight:700;font-size:18px;letter-spacing:-.02em;">RC-Tunnel</span>
-        </a>
-        <p style="font-size:.9rem;color:var(--bs-secondary-color);line-height:1.55;margin:0;max-width:260px;">Self-hosted reverse tunnels with a control panel your whole team can use.</p>
-      </div>
-      <div>
-        <div style="font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--bs-secondary-color);margin-bottom:12px;">Product</div>
-        <div style="display:flex;flex-direction:column;gap:9px;font-size:.92rem;">
-          <a href="#features" style="color:var(--bs-body-color);">Features</a>
-          <a href="#protocols" style="color:var(--bs-body-color);">Protocols</a>
-          <a href="#pricing" style="color:var(--bs-body-color);">Pricing</a>
-          <a href="/demo" style="color:var(--bs-body-color);">Live demo</a>
-        </div>
-      </div>
-      <div>
-        <div style="font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--bs-secondary-color);margin-bottom:12px;">Resources</div>
-        <div style="display:flex;flex-direction:column;gap:9px;font-size:.92rem;">
-          <a href="#how" style="color:var(--bs-body-color);">Quickstart</a>
-          <a href="https://github.com/AlexLuzik/rc-tunnel" target="_blank" rel="noopener" style="color:var(--bs-body-color);">Docs</a>
-          <a href="https://github.com/AlexLuzik/rc-tunnel" target="_blank" rel="noopener" style="color:var(--bs-body-color);">GitHub</a>
-          <a href="/login" style="color:var(--bs-body-color);">Sign in</a>
-        </div>
-      </div>
-      <div>
-        <div style="font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--bs-secondary-color);margin-bottom:12px;">Project</div>
-        <div style="display:flex;flex-direction:column;gap:9px;font-size:.92rem;">
-          <a href="https://github.com/AlexLuzik/rc-tunnel" target="_blank" rel="noopener" style="color:var(--bs-body-color);">Source</a>
-          <a href="https://github.com/AlexLuzik/rc-tunnel/blob/main/LICENSE" target="_blank" rel="noopener" style="color:var(--bs-body-color);">License (MIT)</a>
-          <a href="#top" style="color:var(--bs-body-color);">Back to top</a>
-        </div>
-      </div>
-    </div>
-    <div style="border-top:1px solid var(--bs-border-color);">
+    <div>
       <div style="max-width:1140px;margin:0 auto;padding:18px 24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;font-size:.85rem;color:var(--bs-secondary-color);">
         <span>© 2026 RC-Tunnel · Open source under MIT</span>
         <span style="display:inline-flex;align-items:center;gap:7px;"><span style="position:relative;display:inline-flex;width:8px;height:8px;"><span style="position:absolute;inset:0;border-radius:50%;background:var(--rc-green-500);animation:rc-pulse 2s ease-in-out infinite;"></span><span style="position:relative;width:8px;height:8px;border-radius:50%;background:var(--rc-green-500);"></span></span>All systems operational</span>
