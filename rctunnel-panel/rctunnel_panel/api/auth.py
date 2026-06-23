@@ -28,7 +28,8 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)) -
     ratelimit.clear(ip)  # clear on success
     logs.audit(actor=user.email, action="auth", label="auth.login", target="session",
                ip=ip, team_id=user.team_id)
-    return TokenResponse(access_token=create_token(user_id=user.id, role=user.role.value))
+    return TokenResponse(access_token=create_token(
+        user_id=user.id, role=user.role.value, token_version=user.token_version))
 
 
 @router.get("/me", response_model=UserOut)
@@ -47,6 +48,7 @@ def update_me(body: ProfileUpdate, db: Session = Depends(get_db),
         if not body.current_password or not verify_password(body.current_password, user.password_hash):
             raise HTTPException(status.HTTP_403_FORBIDDEN, "current password is incorrect")
         user.password_hash = hash_password(body.new_password)
+        user.token_version = (user.token_version or 0) + 1   # invalidate other sessions
     db.commit()
     db.refresh(user)
     return user

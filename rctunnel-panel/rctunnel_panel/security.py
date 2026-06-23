@@ -25,12 +25,13 @@ def verify_password(plain: str, hashed: str) -> bool:
         return False
 
 
-def create_token(*, user_id: int, role: str) -> str:
+def create_token(*, user_id: int, role: str, token_version: int = 0) -> str:
     s = get_settings()
     now = dt.datetime.now(dt.timezone.utc)
     payload = {
         "sub": str(user_id),
         "role": role,
+        "tv": token_version,        # must match User.token_version (revoked on password change)
         "iat": now,
         "exp": now + dt.timedelta(hours=s.jwt_ttl_hours),
     }
@@ -39,4 +40,4 @@ def create_token(*, user_id: int, role: str) -> str:
 
 def decode_token(token: str) -> dict:
     s = get_settings()
-    return jwt.decode(token, s.jwt_secret, algorithms=[_ALG])
+    return jwt.decode(token, s.jwt_secret, algorithms=[_ALG], options={"require": ["exp"]})

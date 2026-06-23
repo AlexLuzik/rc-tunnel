@@ -39,6 +39,8 @@ def current_user(request: Request, db: Session = Depends(get_db)) -> User:
     user = db.get(User, int(payload["sub"]))
     if user is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "user not found")
+    if payload.get("tv", 0) != user.token_version:   # revoked (e.g. password changed)
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "session expired")
     return user
 
 

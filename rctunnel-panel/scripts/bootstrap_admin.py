@@ -40,6 +40,7 @@ def main() -> None:
         else:
             user.password_hash = hash_password(password)
             user.role = Role.admin
+            user.token_version = (user.token_version or 0) + 1   # invalidate old sessions
             action = "password reset"
         db.commit()
     base = get_settings().public_base_url.rstrip("/")

@@ -83,6 +83,16 @@ def _agent_id_from_cert(ssl_object: ssl.SSLObject | None) -> int | None:
     return None
 
 
+def _peer_serial(ssl_object: ssl.SSLObject | None) -> int | None:
+    """Serial of the verified peer cert, or None if unavailable."""
+    try:
+        cert = ssl_object.getpeercert() if ssl_object else None
+        s = cert.get("serialNumber") if cert else None
+        return int(s, 16) if s else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 async def _handle(websocket, manager: ConnectionManager) -> None:
     ssl_object = websocket.transport.get_extra_info("ssl_object")
     agent_id = _agent_id_from_cert(ssl_object)
@@ -95,6 +105,14 @@ async def _handle(websocket, manager: ConnectionManager) -> None:
         if agent is None:
             await websocket.close(code=4004, reason="unknown agent")
             return
+        # Reject a superseded/stolen cert: if we've pinned a serial for this agent,
+        # the presented cert must match it. Legacy agents (no pinned serial) pass
+        # until they next enroll. If we can't read the peer serial, don't lock out.
+        if agent.cert_serial:
+            peer = _peer_serial(ssl_object)
+            if peer is not None and str(peer) != agent.cert_serial:
+                await websocket.close(code=4003, reason="superseded certificate")
+                return
         welcome = protocol.welcome_payload(agent, agent.node)
         welcome["artifacts"] = _target_manifest().get("sha256", {})   # trusted hashes for rctc verify
         aname, ateam = agent.name, agent.team_id
@@ -122,6 +140,9 @@ async def _handle(websocket, manager: ConnectionManager) -> None:
                 d = msg.get("cert_days_left")
                 if isinstance(d, int) and not isinstance(d, bool) and -36500 < d < 36500:
                     _set_cert_days(agent_id, d)
+                ip = msg.get("detected_ip")
+                if isinstance(ip, str):
+                    _set_lan_ip(agent_id, ip)   # reflect a live LAN-IP change
             elif mtype == protocol.LOG:
                 log.info("agent %s: %s", agent_id, msg.get("msg"))
     except websockets.ConnectionClosed:
@@ -176,6 +197,18 @@ def _clean_telemetry(v, maxlen: int = 64) -> str | None:
         return None
     v = _TELEMETRY_BAD.sub("", v).strip()[:maxlen]
     return v or None
+
+
+def _set_lan_ip(agent_id: int, ip: str) -> None:
+    try:
+        valid = str(ipaddress.ip_address(ip.strip()))
+    except ValueError:
+        return
+    with SessionLocal() as db:
+        agent = db.get(Agent, agent_id)
+        if agent is not None and agent.lan_ip != valid:
+            agent.lan_ip = valid
+            db.commit()
 
 
 def _store_hello(agent_id: int, msg: dict) -> None:

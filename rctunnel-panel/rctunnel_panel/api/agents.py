@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from cryptography import x509
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -124,6 +125,9 @@ def enroll(body: EnrollRequest, request: Request, db: Session = Depends(get_db),
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"bad CSR: {e}")
 
+    # Pin the freshly-issued cert's serial so the control plane only accepts THIS
+    # cert — a superseded/stolen earlier cert (same CN) is rejected after renewal.
+    agent.cert_serial = str(x509.load_pem_x509_certificate(cert_pem).serial_number)
     agent.os, agent.arch = body.os, body.arch
     agent.last_seen = datetime.now(timezone.utc)
     db.commit()

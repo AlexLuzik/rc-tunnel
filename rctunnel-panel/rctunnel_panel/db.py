@@ -37,6 +37,7 @@ def get_db() -> Iterator[Session]:
 _ADDED_COLUMNS = {
     "users": {
         "team_id": "INTEGER",
+        "token_version": "INTEGER NOT NULL DEFAULT 0",
     },
     "teams": {
         "subdomain_label": "VARCHAR(63)",
@@ -48,6 +49,7 @@ _ADDED_COLUMNS = {
         "team_id": "INTEGER",
         "last_ping_ms": "INTEGER",
         "cert_days_left": "INTEGER",
+        "cert_serial": "VARCHAR(64)",
     },
     "tunnels": {
         "bytes_in": "INTEGER NOT NULL DEFAULT 0",

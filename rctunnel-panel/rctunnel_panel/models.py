@@ -72,6 +72,8 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[Role] = mapped_column(Enum(Role), default=Role.user)   # admin = global superuser
     team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id"), nullable=True)
+    # bumped on password change → invalidates all previously-issued JWTs (logout-everywhere)
+    token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     team: Mapped["Team | None"] = relationship(back_populates="members")
@@ -112,6 +114,7 @@ class Agent(Base):
     agent_version: Mapped[str | None] = mapped_column(String(16), nullable=True)
     last_ping_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)   # control-plane RTT
     cert_days_left: Mapped[int | None] = mapped_column(Integer, nullable=True)  # mTLS cert lifetime (heartbeat)
+    cert_serial: Mapped[str | None] = mapped_column(String(64), nullable=True)  # current issued cert serial (revokes superseded certs)
     generation: Mapped[int] = mapped_column(Integer, default=0)      # bumped on config change
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
