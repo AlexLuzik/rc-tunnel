@@ -201,6 +201,11 @@ func specKey(p proto.ProxySpec) string {
 
 func (s *Server) handleControl(raw net.Conn) {
 	defer raw.Close()
+	// Bound the time a peer may hold a connection (and its semaphore slot) before
+	// sending a valid hello — otherwise a stalled-after-handshake flood exhausts
+	// the global slot pool and starves all tenants. The loop re-arms its own
+	// deadline per message below.
+	_ = raw.SetReadDeadline(time.Now().Add(15 * time.Second))
 	hello, err := proto.ReadMsg(raw)
 	if err != nil || hello.Type != proto.TypeHello {
 		return
