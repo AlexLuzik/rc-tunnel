@@ -22,18 +22,21 @@ from .manager import get_manager
 log = logging.getLogger("rctunnel_panel.traffic")
 
 
-def _fetch_proxy_traffic() -> dict[str, tuple[int, int]]:
-    """Return {proxy_name: (cumulativeIn, cumulativeOut)} from rctd /api/stats."""
+def _fetch_proxy_traffic() -> dict[tuple[str, str], tuple[int, int]]:
+    """Return {(owner_cn, proxy_name): (cumulativeIn, cumulativeOut)} from rctd
+    /api/stats. Keyed by owner CN so traffic is attributed to the agent that
+    actually produced it — a proxy name spoofed by another tenant lands under a
+    different CN and is never billed to the victim."""
     s = get_settings()
-    out: dict[str, tuple[int, int]] = {}
+    out: dict[tuple[str, str], tuple[int, int]] = {}
     req = urllib.request.Request(f"{s.rctd_stats_url}/api/stats")
     try:
         with urllib.request.urlopen(req, timeout=10) as r:
             data = json.load(r)
     except Exception:  # noqa: BLE001  (engine down)
         return out
-    for name, v in (data or {}).items():
-        out[name] = (int(v.get("in") or 0), int(v.get("out") or 0))
+    for e in (data or []):
+        out[(e.get("cn") or "", e.get("name") or "")] = (int(e.get("in") or 0), int(e.get("out") or 0))
     return out
 
 
@@ -41,9 +44,11 @@ def poll_once() -> None:
     traffic = _fetch_proxy_traffic()
     manager = get_manager()
     with SessionLocal() as db:
-        # accumulate per-tunnel cumulative bytes from frps "today" counters
+        # accumulate per-tunnel cumulative bytes — bill only the sample produced by
+        # the agent that OWNS the tunnel (CN agent.<agent_id>), so a tenant can't
+        # inflate another tenant's usage by reusing the t{id} proxy name.
         for t in db.scalars(select(Tunnel)):
-            sample = traffic.get(f"t{t.id}")
+            sample = traffic.get((f"agent.{t.agent_id}", f"t{t.id}"))
             if sample is None:
                 continue
             ti, to = sample

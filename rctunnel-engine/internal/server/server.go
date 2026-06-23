@@ -95,8 +95,10 @@ func (s *Server) acquire() bool {
 func (s *Server) release() { <-s.connSem }
 
 type counters struct {
-	in  int64
-	out int64
+	in   int64
+	out  int64
+	cn   string // owner identity (mTLS CN) — stats are namespaced by it so one
+	name string // tenant can't write traffic into another tenant's proxy counter
 }
 
 // New builds a Server.
@@ -470,11 +472,17 @@ func (c *Client) bridge(pub net.Conn, proxyName string, e *regEntry) {
 	case work := <-pr.ready:
 		e.track(pub)
 		e.track(work)
-		c.s.pipe(pub, work, proxyName)
+		c.s.pipe(pub, work, c.cn, proxyName)
 		e.untrack(pub)
 		e.untrack(work)
 	case <-time.After(10 * time.Second):
 		pub.Close()
+		// close a work conn that races in after the timeout (else it leaks)
+		select {
+		case w := <-pr.ready:
+			w.Close()
+		default:
+		}
 	}
 }
 
@@ -482,7 +490,7 @@ func (c *Client) bridge(pub net.Conn, proxyName string, e *regEntry) {
 // connection. A single uc reader writes to whatever work conn is current; a
 // loop (re)establishes the work conn and pumps replies back.
 func (c *Client) udpServe(uc *net.UDPConn, proxyName string, stop chan struct{}) {
-	cnt := c.s.counters(proxyName)
+	cnt := c.s.counters(c.cn, proxyName)
 	var mu sync.Mutex
 	var cur net.Conn
 
@@ -660,10 +668,15 @@ func (s *Server) handleVhost(conn net.Conn) {
 			work.Close()
 			return
 		}
-		s.pipeBuffered(conn, br, work, ref.spec.Name)
+		s.pipeBuffered(conn, br, work, ref.client.cn, ref.spec.Name)
 	case <-time.After(10 * time.Second):
 		writeStatus(conn, 502, "tunnel timeout")
 		conn.Close()
+		select { // close a work conn that races in after the timeout
+		case w := <-pr.ready:
+			w.Close()
+		default:
+		}
 	}
 }
 
@@ -674,14 +687,17 @@ func writeStatus(w io.Writer, code int, msg string) {
 
 // --- piping + stats ---
 
-func (s *Server) counters(name string) *counters {
-	v, _ := s.stats.LoadOrStore(name, &counters{})
+func (s *Server) counters(cn, name string) *counters {
+	// Key by (owner CN, name): a proxy name is agent-controlled, so without the CN
+	// a malicious agent could name its proxy after a victim's and pollute their
+	// traffic total (-> false quota suspension). The CN comes from the verified cert.
+	v, _ := s.stats.LoadOrStore(cn+"\x00"+name, &counters{cn: cn, name: name})
 	return v.(*counters)
 }
 
 // pipe bridges two raw connections, accounting bytes (in = client->public).
-func (s *Server) pipe(pub, work net.Conn, proxy string) {
-	cnt := s.counters(proxy)
+func (s *Server) pipe(pub, work net.Conn, cn, proxy string) {
+	cnt := s.counters(cn, proxy)
 	done := make(chan struct{}, 2)
 	go func() { n, _ := io.Copy(pub, work); atomic.AddInt64(&cnt.in, n); done <- struct{}{} }()
 	go func() { n, _ := io.Copy(work, pub); atomic.AddInt64(&cnt.out, n); done <- struct{}{} }()
@@ -693,8 +709,8 @@ func (s *Server) pipe(pub, work net.Conn, proxy string) {
 
 // pipeBuffered is like pipe but the public side has a bufio.Reader with
 // possibly-buffered bytes (from reading the HTTP request line/headers).
-func (s *Server) pipeBuffered(pub net.Conn, br *bufio.Reader, work net.Conn, proxy string) {
-	cnt := s.counters(proxy)
+func (s *Server) pipeBuffered(pub net.Conn, br *bufio.Reader, work net.Conn, cn, proxy string) {
+	cnt := s.counters(cn, proxy)
 	done := make(chan struct{}, 2)
 	go func() { n, _ := io.Copy(pub, work); atomic.AddInt64(&cnt.in, n); done <- struct{}{} }()
 	go func() { n, _ := io.Copy(work, br); atomic.AddInt64(&cnt.out, n); done <- struct{}{} }()
@@ -709,13 +725,19 @@ func (s *Server) pipeBuffered(pub net.Conn, br *bufio.Reader, work net.Conn, pro
 func (s *Server) serveStats() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/stats", func(w http.ResponseWriter, r *http.Request) {
-		out := map[string]map[string]int64{}
-		s.stats.Range(func(k, v any) bool {
+		// list of {cn,name,in,out} so the panel can attribute traffic to the
+		// owning identity and ignore a name spoofed by a different tenant.
+		type entry struct {
+			CN   string `json:"cn"`
+			Name string `json:"name"`
+			In   int64  `json:"in"`
+			Out  int64  `json:"out"`
+		}
+		out := []entry{}
+		s.stats.Range(func(_, v any) bool {
 			c := v.(*counters)
-			out[k.(string)] = map[string]int64{
-				"in":  atomic.LoadInt64(&c.in),
-				"out": atomic.LoadInt64(&c.out),
-			}
+			out = append(out, entry{CN: c.cn, Name: c.name,
+				In: atomic.LoadInt64(&c.in), Out: atomic.LoadInt64(&c.out)})
 			return true
 		})
 		w.Header().Set("Content-Type", "application/json")
