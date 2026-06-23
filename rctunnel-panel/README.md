@@ -78,3 +78,18 @@ docs/           SPEC.md, INSTALL.md
 
 See **[docs/INSTALL.md](docs/INSTALL.md)** for the zero-to-tunnel runbook (DNS,
 bootstrap admin, publish artifacts, add node, enroll agent).
+
+```bash
+sudo bash deploy/install-server.sh      # first install (interactive)
+```
+
+## Update
+
+Update an existing install in place — idempotent, preserves data/secrets,
+rebuilds from source, recreates only what changed (Postgres/OpenSearch/Caddy keep
+running; a panel-only change doesn't drop tunnels), runs migrations on boot, and
+republishes the agent for OTA. See [docs/INSTALL.md](docs/INSTALL.md#updating-an-existing-install).
+
+```bash
+git pull && sudo bash deploy/update-server.sh      # --check to preview, --yes to skip the prompt
+```

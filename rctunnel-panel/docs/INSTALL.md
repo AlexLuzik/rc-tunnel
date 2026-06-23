@@ -26,6 +26,37 @@ OpenSearch). The manual steps below document what it does under the hood.
 > RAM: OpenSearch wants ~2× its JVM heap free (default 512m heap → ~1 GB). Budget
 > at least 2 GB total for a comfortable single-node box.
 
+## Updating an existing install
+
+Use the in-place updater — it is **idempotent and non-interactive**, so it's
+safe to run any time (and from cron):
+
+```bash
+cd <repo> && git pull
+sudo bash rctunnel-panel/deploy/update-server.sh             # asks to confirm
+sudo bash rctunnel-panel/deploy/update-server.sh --check     # only print deployed vs available versions
+sudo bash rctunnel-panel/deploy/update-server.sh --yes       # update without the prompt
+```
+
+What it does:
+
+- **Preserves all data and secrets** — never regenerates `master.env` or the
+  Postgres password; `master.env` is left untouched (new panel settings fall back
+  to code defaults).
+- Rebuilds the **Go engine** and the **app image** from source.
+- Recreates **only what actually changed**: Postgres, OpenSearch and Caddy keep
+  running (so `80`/`443` stay up and the DB is untouched). `rctd` is left running
+  unless its binary or `rctd.yml` changed — a panel-only update **does not drop
+  tunnels**. `rctd.yml` is re-rendered from the existing secrets so new keys (e.g.
+  `revoked:`) get added without touching the token/grant secret.
+- **DB schema migrations apply automatically** when the master boots (`init_db`).
+- **Republishes agent artifacts** to `/dl`, so connected agents OTA-upgrade
+  themselves to the new agent version.
+- Logs every step to `/var/log/rctunnel-update-<ts>.log`.
+
+The panel and (if its binary/config changed) `rctd` restart briefly; agents
+reconnect automatically with backoff.
+
 ## 0. Prerequisites
 
 - A Linux host with a public IP and Docker + Docker Compose.
