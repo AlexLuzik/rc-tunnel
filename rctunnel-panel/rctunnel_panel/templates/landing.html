@@ -40,7 +40,18 @@ a{text-decoration:none;}
 @keyframes rc-enter{from{transform:translateY(10px);opacity:0}to{transform:translateY(0);opacity:1}}
 .rc-enter{animation:rc-enter .5s cubic-bezier(.4,0,.2,1) both;}
 @media (prefers-reduced-motion: reduce){*{animation-duration:.001ms!important;transition-duration:.001ms!important;}.rc-card:hover{transform:none!important;}}
-@media (max-width:860px){.rc-hero-grid{grid-template-columns:1fr!important;gap:36px!important;}}
+.rc-lnav-toggle{display:none;}
+@media (max-width:860px){
+  .rc-hero-grid{grid-template-columns:1fr!important;gap:36px!important;}
+  .rc-lnav-toggle{display:inline-flex!important;}
+  .rc-lnav-div{display:none!important;}
+  .rc-lnav-links{position:absolute;top:64px;left:0;right:0;flex-direction:column;align-items:stretch!important;
+    gap:2px!important;background:var(--rc-card-bg);border-bottom:1px solid var(--bs-border-color);
+    padding:8px 16px 14px;box-shadow:0 14px 30px rgba(6,95,70,.14);display:none!important;}
+  .rc-lnav-links.open{display:flex!important;}
+  .rc-lnav-links a{padding:12px!important;font-size:1rem!important;border-radius:10px;color:var(--bs-body-color)!important;}
+  .rc-lnav-signin{display:block!important;border-top:1px dashed var(--bs-border-color);margin-top:4px;}
+}
 </style>
 </head>
 <body>
@@ -56,14 +67,15 @@ a{text-decoration:none;}
         <span style="font-weight:700;font-size:20px;letter-spacing:-.02em;color:var(--bs-body-color);">RC-Tunnel</span>
       </a>
       <div style="flex:1;"></div>
-      <div style="display:none;align-items:center;gap:2px;" class="d-md-flex">
+      <button type="button" class="rc-lnav-toggle" onclick="rcNavToggle()" aria-label="Menu" aria-expanded="false" style="width:38px;height:38px;border-radius:9px;border:1px solid var(--bs-border-color);background:transparent;color:var(--bs-body-color);align-items:center;justify-content:center;cursor:pointer;flex:none;"><i class="ti ti-menu-2" style="font-size:20px;"></i></button>
+      <div class="rc-lnav-links" id="rcLnav" style="display:flex;align-items:center;gap:2px;">
         <a href="#features" style="padding:7px 13px;border-radius:8px;font-weight:500;font-size:.95rem;color:var(--bs-secondary-color);">Features</a>
         <a href="#how" style="padding:7px 13px;border-radius:8px;font-weight:500;font-size:.95rem;color:var(--bs-secondary-color);">How it works</a>
         <a href="#protocols" style="padding:7px 13px;border-radius:8px;font-weight:500;font-size:.95rem;color:var(--bs-secondary-color);">Protocols</a>
         <a href="#pricing" style="padding:7px 13px;border-radius:8px;font-weight:500;font-size:.95rem;color:var(--bs-secondary-color);">Pricing</a>
+        <a href="/login" class="rc-lnav-signin" style="padding:7px 13px;border-radius:8px;font-weight:500;font-size:.95rem;color:var(--bs-body-color);">Sign in</a>
       </div>
-      <span style="width:1px;height:22px;background:var(--bs-border-color);"></span>
-      <a href="/login" style="display:none;padding:7px 13px;border-radius:8px;font-weight:500;font-size:.95rem;color:var(--bs-body-color);" class="d-md-inline-block">Sign in</a>
+      <span class="rc-lnav-div" style="width:1px;height:22px;background:var(--bs-border-color);"></span>
       <a href="/demo" class="btn btn-success btn-sm rounded-pill px-3">Try the demo</a>
       <button type="button" onclick="rcToggleTheme()" aria-label="Toggle dark theme" title="Toggle theme" style="width:36px;height:36px;border-radius:999px;border:1px solid var(--bs-border-color);background:transparent;color:var(--bs-body-color);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex:none;">
         <i id="rcThemeIcon" class="ti ti-moon" style="font-size:18px;"></i>
@@ -355,6 +367,16 @@ function rcToggleTheme(){
   try { localStorage.setItem('rc-theme', next); } catch(e) {}
   rcSyncThemeIcon();
 }
+function rcNavToggle(){
+  var n = document.getElementById('rcLnav'); if (!n) return;
+  var open = n.classList.toggle('open');
+  var b = document.querySelector('.rc-lnav-toggle'); if (b) b.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+// close the mobile menu after tapping a link
+document.addEventListener('click', function(e){
+  var n = document.getElementById('rcLnav');
+  if (n && n.classList.contains('open') && e.target.closest('#rcLnav a')) n.classList.remove('open');
+});
 function rcToggleFaq(btn){
   var body = btn.nextElementSibling;
   var chev = btn.querySelector('.rc-faq-chevron');
