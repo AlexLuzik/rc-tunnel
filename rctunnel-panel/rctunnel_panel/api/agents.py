@@ -13,7 +13,7 @@ from .. import ratelimit
 from ..config import get_settings
 from ..db import get_db
 from ..deps import check_team_access, current_user, get_ca
-from ..models import Agent, Node, Role, User
+from ..models import Agent, Node, Role, User, _token
 from ..pki import CA
 from ..schemas import (
     AgentCreate,
@@ -96,6 +96,28 @@ def delete_agent(agent_id: int, db: Session = Depends(get_db),
     return Response(status_code=204)
 
 
+@router.post("/{agent_id}/reissue-token", response_model=AgentCreated)
+def reissue_token(agent_id: int, db: Session = Depends(get_db),
+                  user: User = Depends(current_user)) -> AgentCreated:
+    """Mint a fresh single-use bootstrap token (re-provision a host). The old
+    token stops working; the agent must be reinstalled with the new command."""
+    if user.role not in (Role.admin, Role.team_admin):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "only a team admin can reissue tokens")
+    agent = db.get(Agent, agent_id)
+    if agent is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "agent not found")
+    check_team_access(agent.team_id, user)
+    agent.agent_token = _token()
+    agent.token_used = False
+    db.commit()
+    db.refresh(agent)
+    return AgentCreated(
+        **AgentOut.model_validate(agent).model_dump(),
+        agent_token=agent.agent_token,
+        install_command=_install_command(agent.agent_token),
+    )
+
+
 @router.post("/enroll", response_model=EnrollResponse)
 def enroll(body: EnrollRequest, request: Request, db: Session = Depends(get_db),
            ca: CA = Depends(get_ca)) -> EnrollResponse:
@@ -112,6 +134,13 @@ def enroll(body: EnrollRequest, request: Request, db: Session = Depends(get_db),
     if agent is None:
         ratelimit.record_fail(ip)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid bootstrap token")
+    # Single-use: the bootstrap token is good for the FIRST enrollment only. Cert
+    # renewals authenticate via the existing mTLS cert over the control plane, so a
+    # leaked install-command token is useless once the agent has enrolled.
+    if agent.token_used:
+        ratelimit.record_fail(ip)
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "bootstrap token already used — reissue it from the panel")
     # NB: do NOT clear the throttle on success — a single valid-token holder must
     # not be able to reset the bucket and brute-force other tokens from one IP.
     s = get_settings()
@@ -128,6 +157,7 @@ def enroll(body: EnrollRequest, request: Request, db: Session = Depends(get_db),
     # Pin the freshly-issued cert's serial so the control plane only accepts THIS
     # cert — a superseded/stolen earlier cert (same CN) is rejected after renewal.
     agent.cert_serial = str(x509.load_pem_x509_certificate(cert_pem).serial_number)
+    agent.token_used = True          # burn the bootstrap token
     agent.os, agent.arch = body.os, body.arch
     agent.last_seen = datetime.now(timezone.utc)
     db.commit()

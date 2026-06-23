@@ -13,6 +13,8 @@ APPLIED = "applied"      # agent -> master
 HEARTBEAT = "heartbeat"  # agent -> master
 LOG = "log"              # agent -> master
 UPGRADE = "upgrade"      # master -> agent (OTA)
+RENEW = "renew"          # agent -> master (mTLS-authenticated cert renewal: CSR)
+RENEWED = "renewed"      # master -> agent (signed cert + CA)
 
 
 def upgrade_payload(version: str, base_url: str, files: list[str] | None = None,

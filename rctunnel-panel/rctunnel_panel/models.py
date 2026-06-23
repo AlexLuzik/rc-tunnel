@@ -104,6 +104,8 @@ class Agent(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(100), unique=True)
     agent_token: Mapped[str] = mapped_column(String(255), unique=True, index=True, default=_token)
+    # single-use: consumed on first enrollment; renewals authenticate via mTLS instead
+    token_used: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     node_id: Mapped[int] = mapped_column(ForeignKey("nodes.id"))
     team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id"), nullable=True)
     status: Mapped[AgentStatus] = mapped_column(Enum(AgentStatus), default=AgentStatus.offline)

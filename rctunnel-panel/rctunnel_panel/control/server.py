@@ -143,6 +143,10 @@ async def _handle(websocket, manager: ConnectionManager) -> None:
                 ip = msg.get("detected_ip")
                 if isinstance(ip, str):
                     _set_lan_ip(agent_id, ip)   # reflect a live LAN-IP change
+            elif mtype == protocol.RENEW:
+                renewed = _renew_cert(agent_id, msg.get("csr_pem", ""))
+                if renewed is not None:
+                    await send(renewed)
             elif mtype == protocol.LOG:
                 log.info("agent %s: %s", agent_id, msg.get("msg"))
     except websockets.ConnectionClosed:
@@ -197,6 +201,33 @@ def _clean_telemetry(v, maxlen: int = 64) -> str | None:
         return None
     v = _TELEMETRY_BAD.sub("", v).strip()[:maxlen]
     return v or None
+
+
+def _renew_cert(agent_id: int, csr_pem: str) -> dict | None:
+    """Sign a renewal CSR for an ALREADY-authenticated agent (its mTLS cert CN
+    gave us agent_id). No bootstrap token involved; identity is server-assigned,
+    so the agent can only renew its own cert. Re-pins the cert serial."""
+    if not csr_pem:
+        return None
+    s = get_settings()
+    ca = get_ca()
+    try:
+        cert_pem = ca.sign_csr(csr_pem.encode(), identity=f"agent.{agent_id}",
+                               days=s.agent_cert_days, client=True)
+    except ValueError as e:
+        log.warning("agent %s renew: bad CSR: %s", agent_id, e)
+        return None
+    from cryptography import x509
+    serial = str(x509.load_pem_x509_certificate(cert_pem).serial_number)
+    with SessionLocal() as db:
+        agent = db.get(Agent, agent_id)
+        if agent is None:
+            return None
+        agent.cert_serial = serial
+        db.commit()
+    log.info("agent %s: renewed cert (serial %s)", agent_id, serial)
+    return {"type": protocol.RENEWED, "agent_cert_pem": cert_pem.decode(),
+            "ca_cert_pem": ca.cert_pem.decode()}
 
 
 def _set_lan_ip(agent_id: int, ip: str) -> None:

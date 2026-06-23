@@ -16,19 +16,31 @@
     <span style="color:var(--bs-secondary-color);font-size:.86rem;">{{ (agent.os or '—') }}/{{ (agent.arch or '—') }}</span>
   </div>
 
-  {% if agent.status.value != 'online' %}
+  {% if agent.status.value == 'online' %}
+  <div class="rc-card" style="padding:16px 24px;margin-bottom:22px;display:flex;align-items:center;gap:10px;">
+    <i class="ti ti-circle-check" style="font-size:18px;color:var(--rc-ok);"></i>
+    <span style="font-size:.9rem;">Agent is connected — installation complete.</span>
+  </div>
+  {% elif not agent.token_used %}
   <div class="rc-card" style="padding:20px 24px;margin-bottom:22px;">
     <h2 style="font-size:1.125rem;font-weight:600;margin:0 0 12px;">Install command</h2>
     <div style="display:flex;gap:10px;align-items:stretch;">
       <code id="installCmd" class="rc-mono" style="flex:1;font-size:.84rem;background:var(--rc-input-bg);border:1px solid var(--bs-border-color);border-radius:10px;padding:12px 14px;overflow-x:auto;white-space:nowrap;color:var(--bs-body-color);">{{ install_cmd }}</code>
       <button type="button" onclick="copyText(document.getElementById('installCmd').textContent,'Install command copied.')" class="btn btn-outline-secondary rounded-pill px-3" style="white-space:nowrap;"><i class="ti ti-copy" style="font-size:15px;margin-right:5px;"></i>Copy</button>
     </div>
-    <p style="color:var(--bs-secondary-color);font-size:.82rem;margin:10px 0 0;">Run this on the target host. It disappears once the agent connects.</p>
+    <p style="color:var(--bs-secondary-color);font-size:.82rem;margin:10px 0 0;">Run this on the target host. The token is single-use — it stops working once the agent enrolls.</p>
   </div>
   {% else %}
-  <div class="rc-card" style="padding:16px 24px;margin-bottom:22px;display:flex;align-items:center;gap:10px;">
-    <i class="ti ti-circle-check" style="font-size:18px;color:var(--rc-ok);"></i>
-    <span style="font-size:.9rem;">Agent is connected — installation complete.</span>
+  <div class="rc-card" style="padding:20px 24px;margin-bottom:22px;">
+    <h2 style="font-size:1.125rem;font-weight:600;margin:0 0 6px;">Reinstall this agent</h2>
+    <p style="color:var(--bs-secondary-color);font-size:.85rem;margin:0 0 12px;">The bootstrap token was already used (the agent has enrolled). To reinstall on a fresh host, reissue a new single-use token.</p>
+    <div id="reissueBox" style="display:none;gap:10px;align-items:stretch;margin-bottom:8px;">
+      <code id="installCmd" class="rc-mono" style="flex:1;font-size:.84rem;background:var(--rc-input-bg);border:1px solid var(--bs-border-color);border-radius:10px;padding:12px 14px;overflow-x:auto;white-space:nowrap;color:var(--bs-body-color);"></code>
+      <button type="button" onclick="copyText(document.getElementById('installCmd').textContent,'Install command copied.')" class="btn btn-outline-secondary rounded-pill px-3" style="white-space:nowrap;"><i class="ti ti-copy" style="font-size:15px;margin-right:5px;"></i>Copy</button>
+    </div>
+    {% if user.role.value in ('admin','team_admin') %}
+    <button type="button" onclick="reissueToken({{ agent.id }})" class="btn btn-outline-secondary rounded-pill px-3"><i class="ti ti-refresh" style="font-size:14px;margin-right:5px;"></i>Reissue token</button>
+    {% endif %}
   </div>
   {% endif %}
 
@@ -100,6 +112,14 @@
 {% block scripts %}
 <script>
 const AID = {{ agent.id }};
+async function reissueToken(id){
+  const r = await api('POST','/api/agents/'+id+'/reissue-token');
+  if(!r) return;
+  const box=document.getElementById('reissueBox'), code=document.getElementById('installCmd');
+  if(code) code.textContent=r.install_command;
+  if(box) box.style.display='flex';
+  toast('success','Token reissued','Reinstall the agent with the new command.');
+}
 function onType(){ const t=t_type.value;
   t_sub_wrap.style.display=(t==='http'||t==='https')?'':'none'; }
 onType();

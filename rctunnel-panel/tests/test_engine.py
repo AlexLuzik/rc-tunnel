@@ -86,7 +86,9 @@ def test_render_rctc():
 
 
 def test_agent_cert_renewal_trigger():
-    """A near-expiry agent cert triggers re-enrollment; a fresh one does not."""
+    """ensure_enrolled uses the single-use token ONLY when no cert exists; with a
+    cert present (even near-expiry) it never touches the token — renewal happens
+    over the mTLS control plane (_maybe_request_renew)."""
     import datetime as dt
 
     from cryptography import x509
@@ -118,15 +120,21 @@ def test_agent_cert_renewal_trigger():
     calls = []
     ag._enroll = lambda: calls.append(1)  # type: ignore[method-assign]
 
-    _issue(5)  # near expiry
+    _issue(5)  # near expiry, but a cert exists → token must NOT be used
     assert ag._cert_days_left() <= 5
     ag.ensure_enrolled()
-    assert calls, "near-expiry cert must trigger re-enroll"
+    assert not calls, "near-expiry cert must renew over mTLS, not via the bootstrap token"
 
     _issue(300)  # fresh
     calls.clear()
     ag.ensure_enrolled()
     assert not calls, "fresh cert must NOT re-enroll"
+
+    # no cert at all → first enrollment uses the token
+    ag.key_path.unlink(); ag.crt_path.unlink(); ag.ca_path.unlink()
+    calls.clear()
+    ag.ensure_enrolled()
+    assert calls, "missing cert must trigger first-time enrollment via the token"
     print("AGENT-CERT-RENEW OK")
 
 

@@ -78,6 +78,7 @@ class Agent:
         self._lock = asyncio.Lock()   # serialize rctc (re)starts across apply + watchdog
         self._upgraded = False
         self._artifacts: dict = {}       # trusted SHA-256 of /dl files, from the mTLS welcome
+        self._renew_key: bytes | None = None   # staged key for an in-flight cert renewal
         self._ca_refresh_tried = False   # guard: re-enroll once per process on a TLS verify failure
         self.install_dir = Path(__file__).resolve().parent   # where agent code lives (OTA target)
 
@@ -96,19 +97,23 @@ class Agent:
             return None
 
     def ensure_enrolled(self) -> None:
+        # The bootstrap token is single-use (first enrollment only). If we already
+        # hold a cert we never touch the token again — renewal happens over the
+        # mTLS control plane, even if the cert is close to expiry.
         if self.crt_path.exists() and self.key_path.exists() and self.ca_path.exists():
             left = self._cert_days_left()
-            if left is None or left > CERT_RENEW_DAYS:
+            self._load_cached_node()
+            if left is not None and left <= CERT_RENEW_DAYS:
+                log.info("agent cert expires in %s days — will renew over the control plane", left)
+            else:
                 log.info("already enrolled (cert valid %s more days)", left)
-                self._load_cached_node()
-                return
-            log.info("agent cert expires in %s days — re-enrolling", left)
+            return
         self._enroll()
 
     def _enroll(self) -> None:
-        """Request (or renew) the agent mTLS cert: generate a fresh key+CSR, sign
-        it with the panel CA via the bootstrap token. Same token re-issues with
-        the same identity (CN agent.<id>), so the grant still matches."""
+        """First-time enrollment: generate a key+CSR and sign it with the panel CA
+        via the single-use bootstrap token. The server assigns the identity (CN
+        agent.<id>); the token is burned after this. Renewals use _request_renew."""
         log.info("enrolling with master ...")
         key = ec.generate_private_key(ec.SECP256R1())
         csr = (
@@ -139,23 +144,40 @@ class Agent:
         (self.work / "node.json").write_text(json.dumps(self.node))
         log.info("enrolled as agent.%s", data["agent_id"])
 
-    async def _cert_renewal_loop(self) -> None:
-        """Renew the agent cert before it expires, then re-exec so both the
-        control-plane WSS and the rctc data plane pick up the new cert."""
+    async def _renew_loop(self, ws) -> None:
+        """Over the live mTLS link, ask for a fresh cert before expiry — no token."""
         while True:
             await asyncio.sleep(CERT_CHECK_SECS)
-            left = self._cert_days_left()
-            if left is None or left > CERT_RENEW_DAYS:
-                continue
-            log.info("agent cert expires in %s days — renewing", left)
-            try:
-                self._enroll()
-            except Exception as e:  # noqa: BLE001
-                log.warning("cert renewal failed: %s; will retry", e)
-                continue
-            log.info("cert renewed; restarting to load it")
-            self.shutdown()
-            os.execv(sys.executable, [sys.executable] + sys.argv)
+            await self._maybe_request_renew(ws)
+
+    async def _maybe_request_renew(self, ws) -> None:
+        left = self._cert_days_left()
+        if (left is not None and left > CERT_RENEW_DAYS) or self._renew_key is not None:
+            return
+        log.info("cert expires in %s days — requesting renewal over the control plane", left)
+        key = ec.generate_private_key(ec.SECP256R1())
+        csr = (x509.CertificateSigningRequestBuilder()
+               .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "agent")]))
+               .sign(key, hashes.SHA256()))
+        # stage the new key in memory; only written if/when the signed cert arrives
+        self._renew_key = key.private_bytes(serialization.Encoding.PEM,
+                                            serialization.PrivateFormat.PKCS8,
+                                            serialization.NoEncryption())
+        await ws.send(json.dumps({"type": "renew",
+                                  "csr_pem": csr.public_bytes(serialization.Encoding.PEM).decode()}))
+
+    def _install_renewed(self, msg: dict) -> None:
+        if not self._renew_key:
+            return
+        self.key_path.write_bytes(self._renew_key)
+        self.key_path.chmod(0o600)
+        self.crt_path.write_text(msg["agent_cert_pem"])
+        if msg.get("ca_cert_pem"):
+            self.ca_path.write_text(msg["ca_cert_pem"])
+        self._renew_key = None
+        log.info("cert renewed over control plane; restarting to load it")
+        self.shutdown()
+        os.execv(sys.executable, [sys.executable] + sys.argv)
 
     def _load_cached_node(self) -> None:
         p = self.work / "node.json"
@@ -174,7 +196,7 @@ class Agent:
     async def run(self) -> None:
         self.ensure_enrolled()
         asyncio.create_task(self._watchdog())   # keep rctc alive regardless of control link
-        asyncio.create_task(self._cert_renewal_loop())   # auto-renew mTLS cert before expiry
+        # cert renewal now happens over the live mTLS link (see _renew_loop in _session)
         backoff = 1
         while True:
             try:
@@ -222,12 +244,16 @@ class Agent:
                 "agent_version": AGENT_VERSION,
                 "detected_ip": resolve("auto"),
             }))
+            await self._maybe_request_renew(ws)   # renew now if the cert is already near expiry
             hb = asyncio.create_task(self._heartbeat(ws))
+            rn = asyncio.create_task(self._renew_loop(ws))
             try:
                 async for raw in ws:
                     msg = json.loads(raw)
                     if msg.get("type") == "config":
                         await self._apply_config(ws, msg)
+                    elif msg.get("type") == "renewed":
+                        self._install_renewed(msg)
                     elif msg.get("type") == "welcome":
                         self.node = msg.get("node", self.node)
                         if isinstance(msg.get("artifacts"), dict):
@@ -236,6 +262,7 @@ class Agent:
                         self._self_upgrade(msg)
             finally:
                 hb.cancel()
+                rn.cancel()
 
     @staticmethod
     def _fetch_retry(url: str, tries: int = 3) -> bytes:
