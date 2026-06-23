@@ -9,6 +9,7 @@ the same dir separately (it is not part of this Python package).
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import shutil
@@ -40,9 +41,16 @@ def main() -> None:
     src = (REPO / "agent" / "rctunnel_agent.py").read_text()
     m = re.search(r'AGENT_VERSION\s*=\s*"([^"]+)"', src)
     version = m.group(1) if m else "0.0.0"
+    # SHA-256 of every published artifact (agent code + rctc binaries). The panel
+    # ships these hashes to agents over the authenticated mTLS control channel, so
+    # an agent can verify a /dl download even if that HTTPS leg is tampered with.
+    sha256 = {}
+    for p in sorted(dest.iterdir()):
+        if p.is_file() and p.name != "manifest.json":
+            sha256[p.name] = hashlib.sha256(p.read_bytes()).hexdigest()
     (dest / "manifest.json").write_text(json.dumps(
-        {"agent_version": version, "files": ["rctunnel_agent.py", "localip.py"]}))
-    print(f"[publish] manifest agent_version={version}")
+        {"agent_version": version, "files": ["rctunnel_agent.py", "localip.py"], "sha256": sha256}))
+    print(f"[publish] manifest agent_version={version} ({len(sha256)} hashed artifacts)")
     print(f"[publish] done -> {dest}")
 
 

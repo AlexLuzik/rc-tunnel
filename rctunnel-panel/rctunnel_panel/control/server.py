@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import logging
+import re
 import ssl
 from pathlib import Path
 
 import websockets
+
+# control/markup chars in agent-reported os/arch/version (rendered to operators)
+_TELEMETRY_BAD = re.compile(r"""[\x00-\x1f<>"'`\\]""")
 
 from ..config import get_settings
 from ..db import SessionLocal
@@ -56,8 +61,10 @@ async def _maybe_upgrade(send, hello: dict) -> None:
     if target and _vtuple(current) < _vtuple(target):
         base = get_settings().public_base_url.rstrip("/") + "/dl"
         log.info("OTA: telling agent (%s) to upgrade to %s", current, target)
-        # use the manifest's file list (only files that actually exist in /dl)
-        await send(protocol.upgrade_payload(target, base, files=manifest.get("files")))
+        # use the manifest's file list (only files that actually exist in /dl) and
+        # ship the trusted SHA-256 map so the agent can verify the /dl download
+        await send(protocol.upgrade_payload(target, base, files=manifest.get("files"),
+                                            sha256=manifest.get("sha256")))
 
 
 def _agent_id_from_cert(ssl_object: ssl.SSLObject | None) -> int | None:
@@ -89,6 +96,7 @@ async def _handle(websocket, manager: ConnectionManager) -> None:
             await websocket.close(code=4004, reason="unknown agent")
             return
         welcome = protocol.welcome_payload(agent, agent.node)
+        welcome["artifacts"] = _target_manifest().get("sha256", {})   # trusted hashes for rctc verify
         aname, ateam = agent.name, agent.team_id
 
     send = json_sender(websocket)
@@ -111,8 +119,9 @@ async def _handle(websocket, manager: ConnectionManager) -> None:
                 await _maybe_upgrade(send, msg)
             elif mtype in (protocol.HEARTBEAT, protocol.APPLIED):
                 manager.touch(agent_id)
-                if msg.get("cert_days_left") is not None:
-                    _set_cert_days(agent_id, msg["cert_days_left"])
+                d = msg.get("cert_days_left")
+                if isinstance(d, int) and not isinstance(d, bool) and -36500 < d < 36500:
+                    _set_cert_days(agent_id, d)
             elif mtype == protocol.LOG:
                 log.info("agent %s: %s", agent_id, msg.get("msg"))
     except websockets.ConnectionClosed:
@@ -160,16 +169,29 @@ def _set_cert_days(agent_id: int, days: int) -> None:
             db.commit()
 
 
+def _clean_telemetry(v, maxlen: int = 64) -> str | None:
+    """Agent-supplied telemetry is untrusted and rendered on operator pages.
+    Strip control/markup chars and length-cap it (defense-in-depth atop autoescape)."""
+    if not isinstance(v, str):
+        return None
+    v = _TELEMETRY_BAD.sub("", v).strip()[:maxlen]
+    return v or None
+
+
 def _store_hello(agent_id: int, msg: dict) -> None:
     with SessionLocal() as db:
         agent = db.get(Agent, agent_id)
         if agent is None:
             return
-        agent.os = msg.get("os") or agent.os
-        agent.arch = msg.get("arch") or agent.arch
-        agent.agent_version = msg.get("agent_version") or agent.agent_version
-        if msg.get("detected_ip"):
-            agent.lan_ip = msg["detected_ip"]
+        agent.os = _clean_telemetry(msg.get("os")) or agent.os
+        agent.arch = _clean_telemetry(msg.get("arch")) or agent.arch
+        agent.agent_version = _clean_telemetry(msg.get("agent_version"), 16) or agent.agent_version
+        ip = msg.get("detected_ip")
+        if isinstance(ip, str):
+            try:
+                agent.lan_ip = str(ipaddress.ip_address(ip.strip()))   # only store a valid IP
+            except ValueError:
+                pass
         db.commit()
 
 

@@ -15,7 +15,8 @@ LOG = "log"              # agent -> master
 UPGRADE = "upgrade"      # master -> agent (OTA)
 
 
-def upgrade_payload(version: str, base_url: str, files: list[str] | None = None) -> dict:
+def upgrade_payload(version: str, base_url: str, files: list[str] | None = None,
+                    sha256: dict | None = None) -> dict:
     return {
         "type": UPGRADE,
         "version": version,
@@ -24,6 +25,9 @@ def upgrade_payload(version: str, base_url: str, files: list[str] | None = None)
         # rcpanel_agent.py is gone from /dl, so requesting it would 404 the whole
         # upgrade. Agents now run rctunnel_agent.py (post-rename reinstall).
         "files": files or ["rctunnel_agent.py", "localip.py"],
+        # Trusted (mTLS-delivered) SHA-256 of each artifact; the agent verifies the
+        # /dl download against this before installing.
+        "sha256": sha256 or {},
     }
 
 

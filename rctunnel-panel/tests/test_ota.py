@@ -1,6 +1,7 @@
 """OTA: master decides to upgrade old agents; agent self-updates + re-execs."""
 
 import asyncio
+import hashlib
 import json
 import os
 import shutil
@@ -50,11 +51,17 @@ def test_agent_self_upgrade():
     shutil.copy2(REPO / "agent" / "rctunnel_agent.py", srcdir / "rctunnel_agent.py")
     shutil.copy2(REPO / "agent" / "localip.py", srcdir / "localip.py")
 
+    files = ["rctunnel_agent.py", "localip.py"]
+    sha = {f: hashlib.sha256((srcdir / f).read_bytes()).hexdigest() for f in files}
+
     ag = A.Agent.__new__(A.Agent)
     ag.master_url = "https://rc-tunnel.com"
     ag._upgraded = False
+    ag._artifacts = {}
     ag.install_dir = install
     ag.shutdown = lambda: None
+    # stub the download: serve the staged src files by name (OS-independent)
+    ag._fetch_retry = lambda url, tries=3: (srcdir / url.rsplit("/", 1)[1]).read_bytes()
 
     execd = {}
     def fake_execv(exe, argv):
@@ -63,10 +70,9 @@ def test_agent_self_upgrade():
     A.os.execv = fake_execv
 
     try:
-        # target far above the running AGENT_VERSION → upgrade proceeds regardless
-        # of the current version (robust to future bumps)
-        ag._self_upgrade({"version": "99.0.0", "base_url": f"file://{srcdir}",
-                          "files": ["rctunnel_agent.py", "localip.py"]})
+        # base_url in the message is IGNORED now (anti-redirect); hashes are required
+        ag._self_upgrade({"version": "99.0.0", "base_url": "file:///evil",
+                          "files": files, "sha256": sha})
     except SystemExit:
         pass
 
@@ -76,10 +82,26 @@ def test_agent_self_upgrade():
     assert execd.get("exe") == sys.executable
     assert ag._upgraded
 
+    # integrity: a wrong/absent hash must abort the upgrade, leaving files untouched
+    ag._upgraded = False
+    execd.clear()
+    (install / "localip.py").write_text("# untouched\n")
+    ag._self_upgrade({"version": "99.0.0", "files": files,
+                      "sha256": {**sha, "localip.py": "deadbeef"}})
+    assert not execd and not ag._upgraded
+    assert (install / "localip.py").read_text() == "# untouched\n"
+    # missing hash entirely → also refused
+    ag._self_upgrade({"version": "99.0.0", "files": files, "sha256": {}})
+    assert not execd
+
+    # path-traversal filename is rejected
+    ag._self_upgrade({"version": "99.0.0", "files": ["../evil.py"], "sha256": {"../evil.py": "x"}})
+    assert not execd
+
     # no-op guard: target not newer than current does nothing
     ag._upgraded = False
     execd.clear()
-    ag._self_upgrade({"version": "0.0.1", "base_url": f"file://{srcdir}"})
+    ag._self_upgrade({"version": "0.0.1"})
     assert not execd
     print("agent self-upgrade OK")
 

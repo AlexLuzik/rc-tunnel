@@ -16,9 +16,11 @@ import argparse
 import asyncio
 import datetime as dt
 import json
+import hashlib
 import logging
 import os
 import platform
+import re
 import shutil
 import signal
 import ssl
@@ -46,6 +48,7 @@ WATCHDOG_SECS = 10
 RECONNECT_MAX = 30
 CERT_RENEW_DAYS = 30      # renew the agent mTLS cert this long before it expires
 CERT_CHECK_SECS = 12 * 3600
+_SAFE_ARTIFACT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")   # no '/', '\', or '..' traversal
 
 
 def _vtuple(s: str) -> tuple[int, ...]:
@@ -74,6 +77,7 @@ class Agent:
         self.node: dict | None = None
         self._lock = asyncio.Lock()   # serialize rctc (re)starts across apply + watchdog
         self._upgraded = False
+        self._artifacts: dict = {}       # trusted SHA-256 of /dl files, from the mTLS welcome
         self._ca_refresh_tried = False   # guard: re-enroll once per process on a TLS verify failure
         self.install_dir = Path(__file__).resolve().parent   # where agent code lives (OTA target)
 
@@ -226,6 +230,8 @@ class Agent:
                         await self._apply_config(ws, msg)
                     elif msg.get("type") == "welcome":
                         self.node = msg.get("node", self.node)
+                        if isinstance(msg.get("artifacts"), dict):
+                            self._artifacts = msg["artifacts"]   # trusted SHA-256 of /dl files
                     elif msg.get("type") == "upgrade":
                         self._self_upgrade(msg)
             finally:
@@ -250,26 +256,36 @@ class Agent:
         raise last if last else RuntimeError("download failed")
 
     def _self_upgrade(self, msg: dict) -> None:
-        """OTA: fetch newer agent code, validate ALL files, then atomically swap
-        (keeping a .bak for rollback) and re-exec. Any download/validate failure
-        leaves the running version untouched."""
+        """OTA: fetch newer agent code, verify its SHA-256 against the trusted
+        (mTLS-delivered) manifest, then atomically swap (keeping a .bak for
+        rollback) and re-exec. Any download/verify failure leaves us untouched."""
         if self._upgraded:
             return
         target = msg.get("version", "")
         if _vtuple(target) <= _vtuple(AGENT_VERSION):
             return
-        base = (msg.get("base_url") or f"{self.master_url}/dl").rstrip("/")
+        # Always fetch from our own configured master, never a URL from the message,
+        # and only fetch simple filenames (no path traversal into the install dir).
+        base = f"{self.master_url}/dl"
         files = msg.get("files") or ["rctunnel_agent.py", "localip.py"]
-        log.info("OTA: upgrading %s -> %s from %s", AGENT_VERSION, target, base)
+        hashes = msg.get("sha256") or {}
+        log.info("OTA: upgrading %s -> %s", AGENT_VERSION, target)
         staged: dict[str, bytes] = {}
         try:
             for f in files:
+                if not _SAFE_ARTIFACT.match(f):
+                    raise ValueError(f"unsafe artifact name: {f!r}")
+                want = hashes.get(f)
+                if not want:
+                    raise ValueError(f"no trusted hash for {f} — refusing OTA")
                 data = self._fetch_retry(f"{base}/{f}")
+                if hashlib.sha256(data).hexdigest() != want:
+                    raise ValueError(f"hash mismatch for {f} — refusing OTA")
                 if f.endswith(".py"):
                     compile(data, f, "exec")           # refuse to install broken code
                 staged[f] = data
         except Exception as e:  # noqa: BLE001
-            log.warning("OTA aborted (download/validate failed: %s); staying on %s", e, AGENT_VERSION)
+            log.warning("OTA aborted (download/verify failed: %s); staying on %s", e, AGENT_VERSION)
             return
         for f, data in staged.items():
             dest = self.install_dir / f
@@ -369,15 +385,20 @@ class Agent:
             return
         m = platform.machine().lower()
         arch = "arm64" if m in ("aarch64", "arm64") else "amd64"
-        url = f"{self.master_url}/dl/rctc-{arch}"
+        name = f"rctc-{arch}"
+        url = f"{self.master_url}/dl/{name}"
         try:
             with urllib.request.urlopen(url, timeout=60) as r:  # system CA verifies LE cert
                 data = r.read()
+            want = self._artifacts.get(name)
+            if want and hashlib.sha256(data).hexdigest() != want:
+                raise ValueError("rctc hash mismatch — refusing to install")
             target.write_bytes(data)
             target.chmod(0o755)
             marker.write_text(AGENT_VERSION)
             self.rctc_bin = str(target)
-            log.info("fetched rctc %s (%d bytes) -> %s", AGENT_VERSION, len(data), target)
+            log.info("fetched rctc %s (%d bytes%s) -> %s", AGENT_VERSION, len(data),
+                     ", verified" if want else "", target)
         except Exception as e:  # noqa: BLE001
             log.error("failed to fetch rctc: %s", e)
             if target.exists():
