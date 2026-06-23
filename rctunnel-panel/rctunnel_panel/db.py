@@ -51,7 +51,7 @@ _ADDED_COLUMNS = {
         "cert_days_left": "INTEGER",
         "cert_serial": "VARCHAR(64)",
         "prev_cert_serial": "VARCHAR(64)",
-        "token_used": "BOOLEAN NOT NULL DEFAULT 0",
+        "token_used": "BOOLEAN NOT NULL DEFAULT false",
     },
     "tunnels": {
         "bytes_in": "INTEGER NOT NULL DEFAULT 0",
@@ -87,7 +87,7 @@ def _auto_migrate() -> None:
         # already enrolled (they renew over mTLS now and would never re-enroll to
         # set it). Runs only on the add, so it won't clobber a later reissue.
         if "agents" in existing_tables and "token_used" not in pre_agents:
-            conn.execute(text("UPDATE agents SET token_used=1 "
+            conn.execute(text("UPDATE agents SET token_used=true "
                               "WHERE agent_version IS NOT NULL OR last_seen IS NOT NULL"))
         # rename legacy frp-named node columns -> engine-neutral (idempotent)
         if "nodes" in existing_tables:
