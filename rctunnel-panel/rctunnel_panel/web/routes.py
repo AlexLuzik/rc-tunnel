@@ -142,6 +142,8 @@ def login_submit(request: Request, email: str = Form(...), password: str = Form(
 @router.get("/demo")
 def demo_login(request: Request, db: Session = Depends(get_db)):
     """Public, passwordless sign-in to the read-only demo account."""
+    if not get_settings().demo_mode:   # only available on a demo deployment
+        return RedirectResponse("/login", status_code=303)
     user = db.scalar(select(User).where(User.email == "demo@rc-tunnel.com"))
     if user is None:
         return RedirectResponse("/login", status_code=303)
@@ -455,7 +457,7 @@ def _export(request: Request, db: Session, tab: str, fname: str):
     if rows:
         cols = sorted({k for r in rows for k in r.keys()})
         w = csv.DictWriter(buf, fieldnames=cols)
-        w.writeheader()
+        w.writerow({c: _csv_safe(c) for c in cols})   # safed header (field names too)
         for r in rows:
             w.writerow({k: _csv_safe(v) for k, v in r.items()})
     return StreamingResponse(io.BytesIO(buf.getvalue().encode()), media_type="text/csv",

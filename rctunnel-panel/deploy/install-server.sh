@@ -473,7 +473,9 @@ docker exec rctunnel-panel-master python -m scripts.publish || warn "publish fai
 ok "manifest: $(cat /var/www/rctunnel-panel-dl/manifest.json 2>/dev/null)"
 
 stage "Creating panel admin"
-docker exec rctunnel-panel-master python -m scripts.bootstrap_admin "$ADMIN_EMAIL" "$ADMIN_PASS" || warn "bootstrap_admin failed (run manually)"
+# Pipe the password via stdin (printf is a shell builtin, so it never appears in
+# the host process list) rather than passing it as a docker exec argument.
+printf '%s\n' "$ADMIN_PASS" | docker exec -i rctunnel-panel-master python -m scripts.bootstrap_admin "$ADMIN_EMAIL" || warn "bootstrap_admin failed (run manually)"
 
 # ---- nightly backup timer ---------------------------------------------------
 stage "Installing nightly backup timer"

@@ -18,6 +18,7 @@ from rctunnel_panel.models import Agent, Role, User  # noqa: E402
 from rctunnel_panel.security import hash_password  # noqa: E402
 from rctunnel_panel.main import app  # noqa: E402
 from rctunnel_panel.web.routes import _csv_safe  # noqa: E402
+from rctunnel_panel.control.server import _clean_telemetry  # noqa: E402
 
 
 def _seed():
@@ -37,6 +38,13 @@ def test_security_fixes():
     assert _csv_safe("@SUM(A1)") == "'@SUM(A1)"
     assert _csv_safe("normal") == "normal"
     assert _csv_safe(None) == ""
+
+    # --- agent telemetry sanitizer (markup/control chars stripped, type/len bound) ---
+    assert _clean_telemetry("linux/amd64") == "linux/amd64"
+    assert _clean_telemetry("a<b'c\"d`e\\f") == "abcdef"     # dangerous chars removed
+    assert _clean_telemetry(1234) is None                    # non-str rejected
+    assert _clean_telemetry("") is None
+    assert len(_clean_telemetry("v" * 100, 16)) <= 16
 
     with TestClient(app) as c:
         c.post("/login", data={"email": "admin@x.io", "password": "supersecret"})
@@ -63,6 +71,10 @@ def test_security_fixes():
         assert "delAgent(" in html
         assert "</script>" not in html.split("delAgent(")[1][:120]  # angle brackets escaped by tojson
         assert "'pwn" not in html  # no single-quote breakout form
+
+        # --- /demo is gated on demo_mode (off here) -> redirects, no demo session ---
+        r = c.get("/demo", follow_redirects=False)
+        assert r.status_code == 303 and r.headers.get("location") == "/login"
 
         # --- /enroll rate-limit: bad tokens get throttled (429) after the window cap ---
         codes = []

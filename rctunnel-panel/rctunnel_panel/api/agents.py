@@ -111,7 +111,8 @@ def enroll(body: EnrollRequest, request: Request, db: Session = Depends(get_db),
     if agent is None:
         ratelimit.record_fail(ip)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid bootstrap token")
-    ratelimit.clear(ip)
+    # NB: do NOT clear the throttle on success — a single valid-token holder must
+    # not be able to reset the bucket and brute-force other tokens from one IP.
     s = get_settings()
     try:
         cert_pem = ca.sign_csr(

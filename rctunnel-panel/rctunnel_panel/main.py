@@ -29,7 +29,9 @@ async def lifespan(app: FastAPI):
     # data-plane isolation is OFF). Refuse to start in production (Postgres) and warn
     # loudly in dev (SQLite), where the suite/quickstart legitimately run without it.
     if not s.grant_secret:
-        if s.database_url.startswith("postgres"):
+        # Fail closed for any real datastore; only the SQLite dev/test default may
+        # run without it (DSN-scheme allowlist, not a "looks like prod" guess).
+        if not s.database_url.startswith("sqlite"):
             raise RuntimeError("RCTUNNEL_GRANT_SECRET is unset — data-plane tenant isolation would be "
                                "disabled; refusing to start. Set it (and the matching rctd grant_secret).")
         logging.getLogger(__name__).warning(

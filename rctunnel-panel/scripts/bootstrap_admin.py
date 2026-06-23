@@ -18,10 +18,19 @@ from rctunnel_panel.security import hash_password
 
 
 def main() -> None:
-    if len(sys.argv) != 3:
-        print("usage: bootstrap_admin <email> <password>", file=sys.stderr)
+    # Password may be the 2nd arg (legacy) or read from stdin, so callers can pipe
+    # it in (e.g. `printf %s "$PW" | bootstrap_admin <email>`) and keep it out of
+    # the process argument list / `ps` output.
+    if len(sys.argv) == 3:
+        email, password = sys.argv[1], sys.argv[2]
+    elif len(sys.argv) == 2:
+        email, password = sys.argv[1], sys.stdin.readline().rstrip("\n")
+        if not password:
+            print("no password on stdin", file=sys.stderr)
+            raise SystemExit(2)
+    else:
+        print("usage: bootstrap_admin <email> [<password>]   (password via stdin if omitted)", file=sys.stderr)
         raise SystemExit(2)
-    email, password = sys.argv[1], sys.argv[2]
     init_db()
     with SessionLocal() as db:
         user = db.query(User).filter(User.email == email).first()

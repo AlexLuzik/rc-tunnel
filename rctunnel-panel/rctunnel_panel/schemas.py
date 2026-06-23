@@ -204,10 +204,10 @@ class TunnelOut(_TunnelOpts):
 
 # --- enrollment (PKI) ---
 class EnrollRequest(BaseModel):
-    bootstrap_token: str
-    csr_pem: str
-    os: str | None = None
-    arch: str | None = None
+    bootstrap_token: str = Field(max_length=256)
+    csr_pem: str = Field(max_length=16384)        # a CSR PEM is a few KB; cap to bound memory
+    os: str | None = Field(default=None, max_length=64)
+    arch: str | None = Field(default=None, max_length=64)
 
 
 class EnrollResponse(BaseModel):
