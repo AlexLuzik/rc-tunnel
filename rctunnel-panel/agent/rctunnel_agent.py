@@ -305,8 +305,11 @@ class Agent:
     async def _heartbeat(self, ws) -> None:
         while True:
             await asyncio.sleep(HEARTBEAT_SECS)
-            # include cert lifetime so the panel can surface agents nearing expiry
-            await ws.send(json.dumps({"type": "heartbeat", "cert_days_left": self._cert_days_left()}))
+            # include cert lifetime + current LAN IP so the panel reflects an IP
+            # change live (without waiting for a reconnect)
+            await ws.send(json.dumps({"type": "heartbeat",
+                                      "cert_days_left": self._cert_days_left(),
+                                      "detected_ip": resolve("auto")}))
 
     async def _watchdog(self) -> None:
         """Restart rctc if it has exited (crash or node restart)."""
@@ -388,17 +391,20 @@ class Agent:
         name = f"rctc-{arch}"
         url = f"{self.master_url}/dl/{name}"
         try:
+            # Fail closed: require a trusted (mTLS-delivered) hash before installing a
+            # native binary. Without one, keep whatever binary we already have.
+            want = self._artifacts.get(name)
+            if not want:
+                raise ValueError(f"no trusted hash for {name} — refusing to (re)install")
             with urllib.request.urlopen(url, timeout=60) as r:  # system CA verifies LE cert
                 data = r.read()
-            want = self._artifacts.get(name)
-            if want and hashlib.sha256(data).hexdigest() != want:
+            if hashlib.sha256(data).hexdigest() != want:
                 raise ValueError("rctc hash mismatch — refusing to install")
             target.write_bytes(data)
             target.chmod(0o755)
             marker.write_text(AGENT_VERSION)
             self.rctc_bin = str(target)
-            log.info("fetched rctc %s (%d bytes%s) -> %s", AGENT_VERSION, len(data),
-                     ", verified" if want else "", target)
+            log.info("fetched rctc %s (%d bytes, verified) -> %s", AGENT_VERSION, len(data), target)
         except Exception as e:  # noqa: BLE001
             log.error("failed to fetch rctc: %s", e)
             if target.exists():

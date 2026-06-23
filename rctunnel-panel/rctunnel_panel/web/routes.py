@@ -121,7 +121,7 @@ def login_submit(request: Request, email: str = Form(...), password: str = Form(
                  db: Session = Depends(get_db)):
     from .. import logs, ratelimit
     ip = request.client.host if request.client else None
-    if ip and len(ratelimit._recent(ip)) >= ratelimit.MAX:
+    if ratelimit.too_many(ip):
         return templates.TemplateResponse(request, "login.html",
                                           {"error": "Too many attempts — try again later"}, status_code=429)
     user = db.scalar(select(User).where(User.email == email))
@@ -132,7 +132,7 @@ def login_submit(request: Request, email: str = Form(...), password: str = Form(
                                           {"error": "Invalid credentials"}, status_code=401)
     ratelimit.clear(ip)
     logs.audit(actor=user.email, action="auth", label="auth.login", target="session", ip=ip, team_id=user.team_id)
-    token = create_token(user_id=user.id, role=user.role.value)
+    token = create_token(user_id=user.id, role=user.role.value, token_version=user.token_version)
     resp = RedirectResponse("/", status_code=303)
     resp.set_cookie(COOKIE, token, httponly=True, samesite="lax",
                     secure=get_settings().cookie_secure)
@@ -147,7 +147,7 @@ def demo_login(request: Request, db: Session = Depends(get_db)):
     user = db.scalar(select(User).where(User.email == "demo@rc-tunnel.com"))
     if user is None:
         return RedirectResponse("/login", status_code=303)
-    token = create_token(user_id=user.id, role=user.role.value)
+    token = create_token(user_id=user.id, role=user.role.value, token_version=user.token_version)
     resp = RedirectResponse("/", status_code=303)
     resp.set_cookie(COOKIE, token, httponly=True, samesite="lax", secure=get_settings().cookie_secure)
     return resp

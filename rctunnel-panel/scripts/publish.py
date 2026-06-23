@@ -48,6 +48,11 @@ def main() -> None:
     for p in sorted(dest.iterdir()):
         if p.is_file() and p.name != "manifest.json":
             sha256[p.name] = hashlib.sha256(p.read_bytes()).hexdigest()
+    # Agents fail closed when a hash is missing, so a published rctc with no hash
+    # would simply never (re)install. Warn loudly if the binaries aren't here yet.
+    if not any(n.startswith("rctc-") for n in sha256):
+        print("[publish] WARNING: no rctc-<arch> binary in the dir — agents can't verify/update "
+              "the engine client until you copy it in and re-run publish.")
     (dest / "manifest.json").write_text(json.dumps(
         {"agent_version": version, "files": ["rctunnel_agent.py", "localip.py"], "sha256": sha256}))
     print(f"[publish] manifest agent_version={version} ({len(sha256)} hashed artifacts)")
