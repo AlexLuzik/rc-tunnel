@@ -60,6 +60,19 @@ a{text-decoration:none;}
 @keyframes rc-enter{from{transform:translateY(8px);opacity:0}to{transform:translateY(0);opacity:1}}
 .rc-enter{animation:rc-enter .26s cubic-bezier(.4,0,.2,1) both;}
 @media (prefers-reduced-motion: reduce){*{animation-duration:.001ms!important;transition-duration:.001ms!important;}.rc-card:hover,.btn:hover{transform:none!important;}}
+/* --- mobile --- */
+.rc-navtoggle{display:none;}
+@media (max-width:760px){
+  main{padding-left:16px!important;padding-right:16px!important;}
+  .rc-navwrap{padding-left:16px!important;padding-right:16px!important;gap:10px!important;}
+  .rc-navtoggle{display:inline-flex!important;}
+  .rc-navlinks{position:absolute;top:60px;left:0;right:0;flex-direction:column;align-items:stretch!important;
+    gap:2px!important;background:var(--rc-card-bg);border-bottom:1px solid var(--bs-border-color);
+    padding:8px 14px 14px;box-shadow:0 14px 30px rgba(6,95,70,.14);display:none!important;}
+  .rc-navlinks.open{display:flex!important;}
+  .rc-navlinks a{padding:12px 12px!important;font-size:1rem!important;border-radius:10px;}
+  .rc-navlinks .rc-themebtn{align-self:flex-start;margin-left:0!important;margin-top:6px;}
+}
 </style>
 </head>
 <body>
@@ -67,20 +80,21 @@ a{text-decoration:none;}
 {% set path = request.url.path %}
 {% set nd = (path == '/' or path.startswith('/agents')) %}
 <nav style="position:sticky;top:0;z-index:1030;backdrop-filter:saturate(180%) blur(10px);background:color-mix(in srgb,var(--rc-card-bg) 82%,transparent);border-bottom:1px solid var(--bs-border-color);">
-  <div style="max-width:1040px;margin:0 auto;padding:0 24px;height:60px;display:flex;align-items:center;gap:20px;">
+  <div class="rc-navwrap" style="max-width:1040px;margin:0 auto;padding:0 24px;height:60px;display:flex;align-items:center;gap:20px;">
     <a href="/" style="display:flex;align-items:center;gap:9px;">
       <span style="display:inline-flex;width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#34d399,#059669);align-items:center;justify-content:center;box-shadow:0 4px 10px rgba(5,150,105,.35);"><i class="ti ti-arrow-ramp-right-2" style="color:#fff;font-size:18px;"></i></span>
       <span style="font-weight:600;font-size:19px;letter-spacing:-.02em;color:var(--bs-body-color);">RC-Tunnel</span>
     </a>
     <div style="flex:1;"></div>
-    <div style="display:flex;align-items:center;gap:4px;">
+    <button type="button" class="rc-navtoggle" onclick="rcNavToggle()" aria-label="Menu" aria-expanded="false" style="width:38px;height:38px;border-radius:9px;border:1px solid var(--bs-border-color);background:transparent;color:var(--bs-body-color);align-items:center;justify-content:center;cursor:pointer;flex:none;"><i class="ti ti-menu-2" style="font-size:20px;"></i></button>
+    <div class="rc-navlinks" id="rcNav" style="display:flex;align-items:center;gap:4px;">
       <a href="/" class="rc-nav" style="padding:7px 13px;border-radius:8px;font-weight:500;font-size:.95rem;color:{{ 'var(--rc-green-700)' if nd else 'var(--bs-body-color)' }};background:{{ 'var(--rc-green-50)' if nd else 'transparent' }};">Dashboard</a>
       <a href="/activity" style="padding:7px 13px;border-radius:8px;font-weight:500;font-size:.95rem;color:{{ 'var(--rc-green-700)' if path=='/activity' else 'var(--bs-body-color)' }};background:{{ 'var(--rc-green-50)' if path=='/activity' else 'transparent' }};">Activity</a>
       {% if user.role.value == 'admin' %}<a href="/admin" style="padding:7px 13px;border-radius:8px;font-weight:500;font-size:.95rem;color:{{ 'var(--rc-green-700)' if path=='/admin' else 'var(--bs-body-color)' }};background:{{ 'var(--rc-green-50)' if path=='/admin' else 'transparent' }};">Admin</a>
       <a href="/fleet" style="display:inline-flex;align-items:center;gap:5px;padding:7px 13px;border-radius:8px;font-weight:500;font-size:.95rem;color:{{ 'var(--rc-green-700)' if path=='/fleet' else 'var(--bs-body-color)' }};background:{{ 'var(--rc-green-50)' if path=='/fleet' else 'transparent' }};">Fleet<span style="display:inline-flex;align-items:center;gap:3px;font-size:.62rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;background:linear-gradient(135deg,#34d399,#059669);color:#fff;padding:1px 6px;border-radius:999px;"><i class="ti ti-crown" style="font-size:11px;"></i>root</span></a>{% endif %}
       <a href="/profile" style="padding:7px 13px;border-radius:8px;font-weight:500;font-size:.95rem;color:{{ 'var(--rc-green-700)' if path=='/profile' else 'var(--bs-body-color)' }};background:{{ 'var(--rc-green-50)' if path=='/profile' else 'transparent' }};">Profile</a>
       <a href="/logout" style="padding:7px 13px;border-radius:8px;font-weight:500;font-size:.95rem;color:var(--bs-secondary-color);">Logout</a>
-      <button type="button" onclick="toggleTheme(this)" aria-label="Toggle dark theme" title="Toggle theme" style="margin-left:6px;width:36px;height:36px;border-radius:999px;border:1px solid var(--bs-border-color);background:transparent;color:var(--bs-body-color);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;"><i class="ti ti-moon" style="font-size:18px;"></i></button>
+      <button type="button" class="rc-themebtn" onclick="toggleTheme(this)" aria-label="Toggle dark theme" title="Toggle theme" style="margin-left:6px;width:36px;height:36px;border-radius:999px;border:1px solid var(--bs-border-color);background:transparent;color:var(--bs-body-color);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;"><i class="ti ti-moon" style="font-size:18px;"></i></button>
     </div>
   </div>
 </nav>
@@ -107,6 +121,11 @@ async function softReload(){
 }
 // kept the old name so every existing caller becomes a soft swap automatically
 function reloadSoon(){ softReload(); }
+function rcNavToggle(){
+  var n=document.getElementById('rcNav'); if(!n) return;
+  var open=n.classList.toggle('open');
+  var b=document.querySelector('.rc-navtoggle'); if(b) b.setAttribute('aria-expanded', open?'true':'false');
+}
 function toggleTheme(btn){
   var el=document.documentElement, next=el.getAttribute('data-bs-theme')==='dark'?'light':'dark';
   el.setAttribute('data-bs-theme',next); try{localStorage.setItem('rc-theme',next);}catch(e){}
