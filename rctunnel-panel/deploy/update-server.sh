@@ -89,16 +89,21 @@ run() {
   ok "panel + engine synced"
 
   # ---- rebuild the engine; only swap if the binary actually changed ---------
-  stage "Building rctd + rctc from source (golang:1.23)"
+  # rctd = host arch; rctc cross-compiled for every agent arch and published to /dl.
+  AGENT_ARCHES="amd64 arm64 arm 386"
+  stage "Building rctd ($ARCH) + rctc [$AGENT_ARCHES] from source (golang:1.23)"
   docker run --rm --security-opt label=disable -v /opt/rctunnel-engine:/src -w /src \
     -e GOCACHE=/tmp/gc -e GOPATH=/tmp/gp -e GOFLAGS=-mod=mod \
     golang:1.23 bash -c "
       set -e
       go vet ./...
       CGO_ENABLED=0 GOOS=linux GOARCH=$ARCH go build -trimpath -ldflags '-s -w' -o bin/rctd ./cmd/rctd
-      CGO_ENABLED=0 GOOS=linux GOARCH=$ARCH go build -trimpath -ldflags '-s -w' -o bin/rctc ./cmd/rctc" \
+      for a in $AGENT_ARCHES; do
+        garm=''; [ \"\$a\" = arm ] && garm=7   # GOARM=7 → armv7
+        env CGO_ENABLED=0 GOOS=linux GOARCH=\$a GOARM=\$garm go build -trimpath -ldflags '-s -w' -o bin/rctc-\$a ./cmd/rctc
+      done" \
     || die "engine build failed"
-  [ -x /opt/rctunnel-engine/bin/rctd ] && [ -x /opt/rctunnel-engine/bin/rctc ] || die "engine binaries missing after build"
+  [ -x /opt/rctunnel-engine/bin/rctd ] || die "rctd binary missing after build"
 
   RCTD_RECREATE=0
   _sha() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
@@ -106,8 +111,11 @@ run() {
     cp -f /opt/rctunnel-engine/bin/rctd /opt/rctunnel-node/rctd; chmod +x /opt/rctunnel-node/rctd
     RCTD_RECREATE=1; ok "rctd binary changed — will recreate rctd"
   else ok "rctd binary unchanged — leaving the data plane running"; fi
-  # always refresh the published rctc (agents verify it by hash; cheap, no restart)
-  cp -f /opt/rctunnel-engine/bin/rctc "$DL/rctc-${ARCH}"; chmod +x "$DL/rctc-${ARCH}"
+  # always refresh every published rctc (agents verify by hash; cheap, no restart)
+  for a in $AGENT_ARCHES; do
+    [ -x "/opt/rctunnel-engine/bin/rctc-$a" ] || die "rctc-$a missing after build"
+    cp -f "/opt/rctunnel-engine/bin/rctc-$a" "$DL/rctc-$a"; chmod +x "$DL/rctc-$a"
+  done
   cat > /opt/rctunnel-node/Dockerfile.rctd <<'EOF'
 FROM debian:stable-slim
 COPY rctd /usr/local/bin/rctd

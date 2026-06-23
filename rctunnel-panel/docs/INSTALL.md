@@ -16,7 +16,10 @@ sudo bash rctunnel-panel/deploy/install-server.sh
 ```
 
 It detects the distro, installs Docker, **builds the `rctd`/`rctc` engine from
-source** in an ephemeral container, generates all secrets, renders every config,
+source** in an ephemeral container — `rctd` for this host's arch, and the `rctc`
+agent client **cross-compiled for `amd64`, `arm64`, `armv7` and `386`** so agents
+on any of those CPUs enroll regardless of the server's arch — generates all
+secrets, renders every config,
 brings up the full stack (**including OpenSearch** for the Activity/Fleet/audit
 logs), publishes agent artifacts, creates your admin, and installs the nightly
 backup timer — printing each step to the console and to
@@ -138,6 +141,12 @@ curl -fsSL https://rc-tunnel.com/dl/install.sh | sudo bash -s -- \
 This installs a `rctunnel-agent` systemd service in `/opt/rctunnel-agent`, enrolls
 for an mTLS cert, and connects. Re-running with the same token re-enrolls the same
 agent (e.g. to migrate or repair). Future updates roll out automatically via OTA.
+
+The installer auto-detects the agent's CPU and pulls the matching `rctc` client.
+Supported (Linux): **`amd64` / `x86_64`, `arm64` / `aarch64`, `armv7` (32-bit
+Raspberry Pi & ARM IoT), and `386` (32-bit x86)**. To add another (e.g.
+`mips64le`, `riscv64`), append its GOARCH to `AGENT_ARCHES` in
+`deploy/install-server.sh` / `deploy/update-server.sh` and re-run the updater.
 
 ## 7. Create a tunnel
 

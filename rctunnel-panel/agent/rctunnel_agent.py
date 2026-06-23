@@ -415,7 +415,12 @@ class Agent:
             self.rctc_bin = str(target)
             return
         m = platform.machine().lower()
-        arch = "arm64" if m in ("aarch64", "arm64") else "amd64"
+        arch = {
+            "x86_64": "amd64", "amd64": "amd64",
+            "aarch64": "arm64", "arm64": "arm64",
+            "armv7l": "arm", "armv6l": "arm", "armhf": "arm", "arm": "arm",
+            "i386": "386", "i686": "386",
+        }.get(m, "amd64")   # default amd64 for anything unrecognised
         name = f"rctc-{arch}"
         url = f"{self.master_url}/dl/{name}"
         try:

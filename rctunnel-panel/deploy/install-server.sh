@@ -203,27 +203,40 @@ rsync -a --delete --exclude 'bin' --exclude '.git' "$ENGINE_SRC"/ /opt/rctunnel-
 ok "panel + engine copied"
 
 # ---- build engine binaries FROM SOURCE (ephemeral golang container) ---------
-stage "Building rctd + rctc from source (ephemeral golang:1.23 container)"
-info "go vet + static build, GOARCH=$ARCH — output streamed below:"
+# rctd runs only on THIS host, so it is built for the host arch ($ARCH). The rctc
+# agent client is cross-compiled for every arch in $AGENT_ARCHES and published to
+# /dl, so agents on any of these CPUs enroll regardless of the server's arch.
+AGENT_ARCHES="amd64 arm64 arm 386"
+stage "Building rctd ($ARCH) + rctc [$AGENT_ARCHES] from source (ephemeral golang:1.23 container)"
+info "go vet + static cross-builds — output streamed below:"
 docker run --rm --security-opt label=disable -v /opt/rctunnel-engine:/src -w /src \
   -e GOCACHE=/tmp/gc -e GOPATH=/tmp/gp -e GOFLAGS=-mod=mod \
   golang:1.23 bash -c "
     set -e
     echo '--- go vet ---'; go vet ./...
-    echo '--- building rctd ---'; CGO_ENABLED=0 GOOS=linux GOARCH=$ARCH go build -trimpath -ldflags '-s -w' -o bin/rctd ./cmd/rctd
-    echo '--- building rctc ---'; CGO_ENABLED=0 GOOS=linux GOARCH=$ARCH go build -trimpath -ldflags '-s -w' -o bin/rctc ./cmd/rctc
+    echo '--- building rctd ($ARCH) ---'
+    CGO_ENABLED=0 GOOS=linux GOARCH=$ARCH go build -trimpath -ldflags '-s -w' -o bin/rctd ./cmd/rctd
+    for a in $AGENT_ARCHES; do
+      garm=''; [ \"\$a\" = arm ] && garm=7   # GOARM=7 → armv7 (Pi 2/3/4-32bit/Zero2)
+      echo \"--- building rctc-\$a ---\"
+      env CGO_ENABLED=0 GOOS=linux GOARCH=\$a GOARM=\$garm go build -trimpath -ldflags '-s -w' -o bin/rctc-\$a ./cmd/rctc
+    done
     ls -la bin/" || die "engine build failed"
-[ -x /opt/rctunnel-engine/bin/rctd ] && [ -x /opt/rctunnel-engine/bin/rctc ] || die "engine binaries missing after build"
-# place rctd in its docker build context; publish rctc to /dl for agents
+[ -x /opt/rctunnel-engine/bin/rctd ] || die "rctd binary missing after build"
+# place rctd in its docker build context; publish every rctc-<arch> to /dl for agents
 cp -f /opt/rctunnel-engine/bin/rctd /opt/rctunnel-node/rctd
-cp -f /opt/rctunnel-engine/bin/rctc "/var/www/rctunnel-panel-dl/rctc-${ARCH}"
-chmod +x /opt/rctunnel-node/rctd "/var/www/rctunnel-panel-dl/rctc-${ARCH}"
+chmod +x /opt/rctunnel-node/rctd
+for a in $AGENT_ARCHES; do
+  [ -x "/opt/rctunnel-engine/bin/rctc-$a" ] || die "rctc-$a missing after build"
+  cp -f "/opt/rctunnel-engine/bin/rctc-$a" "/var/www/rctunnel-panel-dl/rctc-$a"
+  chmod +x "/var/www/rctunnel-panel-dl/rctc-$a"
+done
 cat > /opt/rctunnel-node/Dockerfile.rctd <<'EOF'
 FROM debian:stable-slim
 COPY rctd /usr/local/bin/rctd
 ENTRYPOINT ["/usr/local/bin/rctd"]
 EOF
-ok "built rctd ($(stat -c%s /opt/rctunnel-node/rctd) B) + rctc ($(stat -c%s /var/www/rctunnel-panel-dl/rctc-${ARCH}) B)"
+ok "built rctd ($ARCH) + rctc for: $AGENT_ARCHES"
 
 # ---- secrets + configs ------------------------------------------------------
 stage "Generating secrets + rendering configs"

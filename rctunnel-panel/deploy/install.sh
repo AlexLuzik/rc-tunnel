@@ -29,8 +29,10 @@ done
 [ -n "$MASTER_URL" ] || MASTER_URL="$(printf '%s' "$BASE_URL" | sed 's#/dl/*$##')"
 
 case "$(uname -m)" in
-  x86_64|amd64) ARCH="amd64" ;;
-  aarch64|arm64) ARCH="arm64" ;;
+  x86_64|amd64)            ARCH="amd64" ;;
+  aarch64|arm64)           ARCH="arm64" ;;
+  armv7l|armv6l|armhf|arm) ARCH="arm" ;;
+  i386|i686)               ARCH="386" ;;
   *) echo "error: unsupported arch $(uname -m)" >&2; exit 1 ;;
 esac
 
