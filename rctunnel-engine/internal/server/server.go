@@ -9,6 +9,7 @@ package server
 import (
 	"bufio"
 	"crypto/rand"
+	"crypto/subtle"
 	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
@@ -44,6 +45,16 @@ type pairing struct {
 	owner string // CN allowed to claim this work conn
 }
 
+// tokenEqual compares auth tokens in constant time (avoids a timing oracle).
+func tokenEqual(got, want string) bool {
+	return subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
+}
+
+// maxConns bounds concurrent connection-handler goroutines across all listeners,
+// so a flood can't exhaust memory/FDs. Generous: legit fleets stay far below it,
+// and the host nofile ulimit is the same order of magnitude.
+const maxConns = 60000
+
 // certCN returns the verified mTLS client cert CN, or "" if none.
 func certCN(c net.Conn) string {
 	if tc, ok := c.(*tls.Conn); ok {
@@ -68,7 +79,20 @@ type Server struct {
 	pend    sync.Map            // connID -> *pairing
 	stats   sync.Map            // proxy name -> *counters
 	clients map[string]*Client  // clientID -> live control connection (for reconnect eviction)
+	connSem chan struct{}       // bounds concurrent connection handlers (DoS backstop)
 }
+
+// acquire reserves a connection slot; false if at capacity (caller should drop).
+func (s *Server) acquire() bool {
+	select {
+	case s.connSem <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Server) release() { <-s.connSem }
 
 type counters struct {
 	in  int64
@@ -78,7 +102,7 @@ type counters struct {
 // New builds a Server.
 func New(cfg Config) *Server {
 	return &Server{cfg: cfg, vhosts: map[string]*proxyRef{}, tcp: map[int]*proxyRef{},
-		clients: map[string]*Client{}}
+		clients: map[string]*Client{}, connSem: make(chan struct{}, maxConns)}
 }
 
 // Run starts all listeners and blocks.
@@ -108,7 +132,11 @@ func (s *Server) Run() error {
 		if err != nil {
 			return err
 		}
-		go s.handleControl(c)
+		if !s.acquire() {
+			_ = c.Close()
+			continue
+		}
+		go func(c net.Conn) { defer s.release(); s.handleControl(c) }(c)
 	}
 }
 
@@ -177,7 +205,7 @@ func (s *Server) handleControl(raw net.Conn) {
 	if err != nil || hello.Type != proto.TypeHello {
 		return
 	}
-	if s.cfg.Token != "" && hello.Token != s.cfg.Token {
+	if s.cfg.Token != "" && !tokenEqual(hello.Token, s.cfg.Token) {
 		_ = proto.WriteMsg(raw, &proto.Msg{Type: proto.TypeHelloResp, Error: "bad token"})
 		return
 	}
@@ -365,10 +393,19 @@ func (c *Client) register(p proto.ProxySpec) proto.ProxyStatus {
 		ref := &proxyRef{client: c, spec: p}
 		lowered := make([]string, 0, len(hosts))
 		c.s.mu.Lock()
+		// Reject if any host is already claimed by a DIFFERENT identity — prevents
+		// cross-tenant vhost takeover (the same identity reconnecting may overwrite
+		// its own entries). Check all before inserting any.
 		for _, h := range hosts {
 			lh := strings.ToLower(h)
-			c.s.vhosts[lh] = ref
+			if ex, ok := c.s.vhosts[lh]; ok && ex.client != nil && ex.client.id != c.id {
+				c.s.mu.Unlock()
+				return proto.ProxyStatus{Name: p.Name, Error: "host already claimed: " + lh}
+			}
 			lowered = append(lowered, lh)
+		}
+		for _, lh := range lowered {
+			c.s.vhosts[lh] = ref
 		}
 		c.s.mu.Unlock()
 		c.regs[p.Name] = &regEntry{spec: p, closers: []func(){
@@ -408,7 +445,11 @@ func (c *Client) acceptPublic(ln net.Listener, p proto.ProxySpec, e *regEntry) {
 		if err != nil {
 			return
 		}
-		go c.bridge(pub, p.Name, e)
+		if !c.s.acquire() {
+			_ = pub.Close()
+			continue
+		}
+		go func(pub net.Conn) { defer c.s.release(); c.bridge(pub, p.Name, e) }(pub)
 	}
 }
 
@@ -520,7 +561,11 @@ func (s *Server) acceptWork(ln net.Listener) {
 		if err != nil {
 			return
 		}
-		go s.handleWork(c)
+		if !s.acquire() {
+			_ = c.Close()
+			continue
+		}
+		go func(c net.Conn) { defer s.release(); s.handleWork(c) }(c)
 	}
 }
 
@@ -531,7 +576,7 @@ func (s *Server) handleWork(conn net.Conn) {
 		conn.Close()
 		return
 	}
-	if s.cfg.Token != "" && m.Token != s.cfg.Token {
+	if s.cfg.Token != "" && !tokenEqual(m.Token, s.cfg.Token) {
 		conn.Close()
 		return
 	}
@@ -542,9 +587,11 @@ func (s *Server) handleWork(conn net.Conn) {
 		return
 	}
 	pr := v.(*pairing)
-	// Bind the work conn to the identity that owns the proxy: a leaked connID
-	// can't be claimed by a different agent's connection.
-	if s.cfg.GrantSecret != "" && pr.owner != "" && certCN(conn) != pr.owner {
+	// Bind the work conn to the identity that owns the proxy: a leaked connID can't
+	// be claimed by a different agent's connection. Enforced whenever the proxy has
+	// an owner and the work conn presents a verified mTLS CN — independent of
+	// GrantSecret, so isolation doesn't silently fail open without grants.
+	if cn := certCN(conn); pr.owner != "" && cn != "" && cn != pr.owner {
 		conn.Close()
 		return
 	}
@@ -564,17 +611,25 @@ func (s *Server) acceptVhost(ln net.Listener) {
 		if err != nil {
 			return
 		}
-		go s.handleVhost(c)
+		if !s.acquire() {
+			_ = c.Close()
+			continue
+		}
+		go func(c net.Conn) { defer s.release(); s.handleVhost(c) }(c)
 	}
 }
 
 func (s *Server) handleVhost(conn net.Conn) {
+	// Bound how long a client may dribble request headers (slowloris) before we
+	// have a parsed request; cleared once the request line+headers are in.
+	_ = conn.SetReadDeadline(time.Now().Add(15 * time.Second))
 	br := bufio.NewReader(conn)
 	req, err := http.ReadRequest(br)
 	if err != nil {
 		conn.Close()
 		return
 	}
+	_ = conn.SetReadDeadline(time.Time{})
 	host := strings.ToLower(req.Host)
 	if i := strings.IndexByte(host, ':'); i >= 0 {
 		host = host[:i]
