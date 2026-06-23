@@ -80,6 +80,28 @@ def test_enroll_lifecycle():
         assert _renew_cert(a2id, "") is None
         assert _renew_cert(a2id, "not a csr") is None
 
+        # --- concurrent enroll with the SAME token: at most ONE may win (no TOCTOU) ---
+        import threading
+        race = c.post("/api/agents", json={"name": "race1"}).json()
+        rtok = race["agent_token"]
+        N = 8
+        csrs = [_csr() for _ in range(N)]   # pre-generate so threads race on the endpoint
+        results: list[int] = []
+        barrier = threading.Barrier(N)
+
+        def attempt(i):
+            barrier.wait()
+            r = c.post("/api/agents/enroll", json={"bootstrap_token": rtok, "csr_pem": csrs[i],
+                                                   "os": "linux", "arch": "amd64"})
+            results.append(r.status_code)
+
+        ts = [threading.Thread(target=attempt, args=(i,)) for i in range(N)]
+        for t in ts:
+            t.start()
+        for t in ts:
+            t.join()
+        assert results.count(200) == 1, results   # the security property: single-use under concurrency
+
     print("ENROLL-LIFECYCLE OK")
 
 

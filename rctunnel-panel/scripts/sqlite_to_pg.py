@@ -39,6 +39,13 @@ with old.connect() as oc, new.begin() as nc:
             nc.execute(insert(t), rows)
         print(f"  {t.name}: copied {len(rows)} rows")
 
+# burn the bootstrap token of already-enrolled agents. The on-startup _auto_migrate
+# backfill only fires when it ADDS the token_used column, which never happens on a
+# freshly create_all'd target — so do it here too (mirrors db.py).
+with new.begin() as nc:
+    nc.execute(text("UPDATE agents SET token_used = true "
+                    "WHERE token_used = false AND (agent_version IS NOT NULL OR last_seen IS NOT NULL)"))
+
 # reset id sequences so future inserts don't collide with copied ids
 with new.begin() as nc:
     for t in ORDER:

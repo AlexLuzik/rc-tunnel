@@ -83,6 +83,9 @@ def _check_custom_domains(db: Session, custom_domains: str | None,
     from ..config import get_settings
     apex = get_settings().public_domain.lower()
     doms = [d.strip().lower() for d in custom_domains.split(",") if d.strip()]
+    if len(doms) > get_settings().max_custom_domains:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            f"too many custom domains (max {get_settings().max_custom_domains})")
     for d in doms:
         if not _FQDN_RE.match(d):
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"invalid domain '{d}'")
@@ -166,6 +169,11 @@ def create_tunnel(agent_id: int, body: TunnelCreate, db: Session = Depends(get_d
     agent = _agent_or_404(agent_id, db, user)
     team = db.get(Team, agent.team_id) if agent.team_id else None
     _validate(body, team_has_label=bool(team and team.subdomain_label))
+    from ..config import get_settings
+    n = db.scalar(select(func.count()).select_from(Tunnel).where(Tunnel.agent_id == agent_id)) or 0
+    if n >= get_settings().max_tunnels_per_agent:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            f"tunnel limit reached for this agent (max {get_settings().max_tunnels_per_agent})")
     if db.scalar(select(Tunnel).where(Tunnel.agent_id == agent_id, Tunnel.name == body.name)):
         raise HTTPException(status.HTTP_409_CONFLICT, "tunnel name exists for agent")
     _check_subdomain_unique(db, body.subdomain, agent.team_id)

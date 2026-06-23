@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from cryptography import x509
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from .. import ratelimit
@@ -109,6 +109,10 @@ def reissue_token(agent_id: int, db: Session = Depends(get_db),
     check_team_access(agent.team_id, user)
     agent.agent_token = _token()
     agent.token_used = False
+    # Force-revoke the current cert too: a non-empty sentinel serial matches no real
+    # cert, so the existing (possibly stolen) cert is rejected on its next connect.
+    # The reinstall re-enrolls and pins a fresh real serial.
+    agent.cert_serial = "revoked"
     db.commit()
     db.refresh(agent)
     return AgentCreated(
@@ -154,13 +158,20 @@ def enroll(body: EnrollRequest, request: Request, db: Session = Depends(get_db),
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"bad CSR: {e}")
 
-    # Pin the freshly-issued cert's serial so the control plane only accepts THIS
-    # cert — a superseded/stolen earlier cert (same CN) is rejected after renewal.
-    agent.cert_serial = str(x509.load_pem_x509_certificate(cert_pem).serial_number)
-    agent.token_used = True          # burn the bootstrap token
-    agent.os, agent.arch = body.os, body.arch
-    agent.last_seen = datetime.now(timezone.utc)
+    # Burn the token ATOMICALLY: a single conditional UPDATE (token_used 0->1) so
+    # that concurrent enrolls with the same token can't all succeed (TOCTOU). Only
+    # the row-winner proceeds; everyone else gets 409. Pin the new cert's serial in
+    # the same write. Done after signing so a bad CSR doesn't waste the token.
+    serial = str(x509.load_pem_x509_certificate(cert_pem).serial_number)
+    burned = db.execute(
+        update(Agent).where(Agent.id == agent.id, Agent.token_used.is_(False))
+        .values(token_used=True, cert_serial=serial, os=body.os, arch=body.arch,
+                last_seen=datetime.now(timezone.utc)))
     db.commit()
+    if burned.rowcount != 1:
+        ratelimit.record_fail(ip)
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "bootstrap token already used — reissue it from the panel")
     db.refresh(agent)
     node = agent.node
     return EnrollResponse(

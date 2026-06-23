@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     public_domain: str = "rc-tunnel.com"          # used to build subdomain URLs
     public_base_url: str = "https://rc-tunnel.com"
     subdomain_max_depth: int = 5                   # labels before apex incl. mandatory team label (Caddy must match)
+    max_tunnels_per_agent: int = 100               # guardrail: bounds cert-eligible hosts (ACME issuance limits)
+    max_custom_domains: int = 10                   # per tunnel
 
     # --- auth ---
     jwt_secret: str = "change-me"                  # override in .env (long random)
