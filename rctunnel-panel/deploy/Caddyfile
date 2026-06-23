@@ -1,0 +1,34 @@
+# rcpanel — public web + agent downloads + tunnel vhost.
+# NOTE: the agent control plane (port 8001) is mTLS and is NOT proxied here —
+# agents connect to <domain>:8001 directly. Open 8001 in the firewall.
+
+rc-tunnel.com {
+	# agent installer + binaries
+	handle_path /dl/* {
+		root * /var/www/rcpanel-dl
+		file_server
+	}
+	# everything else -> master web/API
+	handle {
+		reverse_proxy 127.0.0.1:8000
+	}
+}
+
+# tunnel subdomains -> rctd vhost (http proxies created in the panel); up to 4 labels deep
+*.rc-tunnel.com, *.*.rc-tunnel.com, *.*.*.rc-tunnel.com, *.*.*.*.rc-tunnel.com, *.*.*.*.*.rc-tunnel.com {
+	log {
+		output file /var/lib/caddy/access.log { roll_size 50MiB roll_keep 3 }
+		format json
+	}
+	reverse_proxy 127.0.0.1:8090 {
+		header_up Host {host}
+		# explanatory page instead of a default 404 (suspended/offline/unknown)
+		@gone status 404 502 503
+		handle_response @gone {
+			rewrite * /_offline
+			reverse_proxy 127.0.0.1:8000 {
+				header_up X-Tunnel-Host {host}
+			}
+		}
+	}
+}

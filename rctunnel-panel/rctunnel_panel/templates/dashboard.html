@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · RC-Tunnel{% endblock %}
+{% block content %}
+<main style="max-width:1040px;margin:0 auto;padding:28px 24px 80px;">
+<div class="rc-enter">
+  <div style="margin-bottom:22px;">
+    <h1 style="font-size:1.75rem;font-weight:600;letter-spacing:-.01em;margin:0;">Dashboard</h1>
+    <p style="color:var(--bs-secondary-color);margin:6px 0 0;font-size:.95rem;">Your connected agents at a glance.</p>
+  </div>
+
+  <div class="rc-card rc-lift" style="padding:22px 24px;">
+    {% set ns = namespace(on=0) %}{% for a in agents %}{% if a.status.value=='online' %}{% set ns.on = ns.on + 1 %}{% endif %}{% endfor %}
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+      <h2 style="font-size:1.375rem;font-weight:600;margin:0;letter-spacing:-.01em;">Agents</h2>
+      <span style="font-size:.82rem;color:var(--bs-secondary-color);background:var(--rc-green-50);padding:3px 10px;border-radius:999px;">{{ ns.on }} online · {{ agents|length }} total</span>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle">
+        <thead><tr style="color:var(--bs-secondary-color);font-size:.78rem;text-transform:uppercase;letter-spacing:.04em;">
+          <th style="border:0;font-weight:600;">Name</th><th style="border:0;font-weight:600;">Status</th><th style="border:0;font-weight:600;">Ping</th><th style="border:0;font-weight:600;">Version</th><th style="border:0;font-weight:600;">LAN IP</th><th style="border:0;font-weight:600;">OS / Arch</th><th style="border:0;font-weight:600;text-align:right;">Actions</th></tr></thead>
+        <tbody>
+        {% for a in agents %}
+          <tr>
+            <td><a href="/agents/{{ a.id }}" style="font-weight:600;color:var(--rc-green-700);">{{ a.name }}</a></td>
+            <td>
+              {% if a.status.value == 'online' %}<span style="display:inline-flex;align-items:center;gap:8px;font-weight:500;"><span class="rc-dot"><span class="p"></span><span class="c"></span></span>online</span>
+              {% else %}<span style="display:inline-flex;align-items:center;gap:8px;color:var(--bs-secondary-color);font-weight:500;"><span style="width:9px;height:9px;border-radius:50%;border:2px solid #94a3b8;"></span>offline</span>{% endif %}
+            </td>
+            <td>
+              {% if a.status.value=='online' and a.last_ping_ms is not none %}
+                {% set p = a.last_ping_ms %}
+                {% if p < 100 %}<span class="rc-pill" style="background:rgba(16,185,129,.14);color:var(--rc-green-700);">{{ p }} ms</span>
+                {% elif p <= 300 %}<span class="rc-pill" style="background:rgba(245,158,11,.16);color:var(--rc-warn);">{{ p }} ms</span>
+                {% else %}<span class="rc-pill" style="background:rgba(239,68,68,.14);color:var(--rc-bad);">{{ p }} ms</span>{% endif %}
+              {% else %}<span style="color:var(--bs-secondary-color);">—</span>{% endif %}
+            </td>
+            <td><span class="rc-mono" style="font-size:.82rem;background:var(--rc-green-50);color:var(--rc-green-700);padding:2px 8px;border-radius:6px;">{{ a.agent_version or '—' }}</span></td>
+            <td class="rc-mono" style="font-size:.84rem;">{{ a.lan_ip or '—' }}</td>
+            <td style="color:var(--bs-secondary-color);font-size:.86rem;">{{ (a.os or '—') }}/{{ (a.arch or '—') }}</td>
+            <td style="text-align:right;white-space:nowrap;">
+              {% if user.role.value != 'demo' %}
+              <button type="button" onclick="editAgent({{ a.id }})" class="btn btn-outline-secondary btn-sm rounded-pill px-3" style="margin-right:5px;"><i class="ti ti-pencil" style="font-size:13px;margin-right:3px;"></i>Edit</button>
+              <button type="button" class="btn btn-outline-danger btn-sm rounded-pill px-3" onclick="armDel(this, () => delAgent({{ a.id }}, '{{ a.name }}'))"><i class="ti ti-trash" style="font-size:14px;"></i></button>
+              {% else %}<span style="color:var(--bs-secondary-color);font-size:.8rem;">read-only</span>{% endif %}
+            </td>
+          </tr>
+          <tr id="aedit-{{ a.id }}" style="display:none;"><td colspan="7" style="background:rgba(16,185,129,.07);">
+            <div class="rc-enter" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end;padding:6px 4px;">
+              <div style="min-width:220px;"><label style="font-size:.78rem;font-weight:500;margin-bottom:4px;display:block;">Agent name</label><input id="ae_name_{{ a.id }}" class="form-control form-control-sm" value="{{ a.name }}" onkeydown="if(event.key==='Enter')saveAgent({{ a.id }})"></div>
+              <button type="button" onclick="saveAgent({{ a.id }})" class="btn btn-success btn-sm rounded-pill px-3">Save</button>
+              <button type="button" onclick="editAgent({{ a.id }})" class="btn btn-outline-secondary btn-sm rounded-pill px-3">Cancel</button>
+            </div>
+          </td></tr>
+        {% else %}<tr><td colspan="7" style="color:var(--bs-secondary-color);">No agents yet — add your first one below.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if user.role.value in ('admin','team_admin') %}
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;border-top:1px dashed var(--bs-border-color);padding-top:16px;margin-top:4px;">
+      <div style="flex:1;min-width:160px;"><label style="font-size:.8rem;font-weight:500;margin-bottom:4px;display:block;">Agent name</label><input id="a_name" class="form-control form-control-sm" placeholder="my-agent" onkeydown="if(event.key==='Enter')addAgent()"></div>
+      <button type="button" onclick="addAgent()" class="btn btn-success btn-sm rounded-pill px-3"><i class="ti ti-plus" style="font-size:14px;margin-right:4px;"></i>Add agent</button>
+    </div>
+    {% else %}
+    <p style="color:var(--bs-secondary-color);font-size:.85rem;border-top:1px dashed var(--bs-border-color);padding-top:14px;margin:4px 0 0;">Only a team admin can connect new agents to this team.</p>
+    {% endif %}
+  </div>
+</div>
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function addAgent(){ const name=a_name.value.trim();
+  if(!name){ toast('error','Name required','Enter an agent name first.'); a_name.focus(); return; }
+  await api('POST','/api/agents',{name:name});
+  toast('success','Agent added','Open the agent to copy its install command.'); reloadSoon(); }
+function editAgent(id){ const r=document.getElementById('aedit-'+id); const open=r.style.display==='none';
+  r.style.display=open?'':'none'; if(open){ const i=document.getElementById('ae_name_'+id); i.focus(); i.select(); } }
+async function saveAgent(id){ const name=document.getElementById('ae_name_'+id).value.trim();
+  if(!name){ toast('error','Name required','Agent name cannot be empty.'); return; }
+  await api('PATCH','/api/agents/'+id,{name:name}); toast('success','Saved','Agent renamed.'); reloadSoon(); }
+async function delAgent(id,name){ await api('DELETE','/api/agents/'+id); toast('success','Deleted',(name||'Agent')+' removed.'); reloadSoon(); }
+</script>
+{% endblock %}

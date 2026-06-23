@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Admin · RC-Tunnel{% endblock %}
+{% block content %}
+<main style="max-width:1040px;margin:0 auto;padding:28px 24px 80px;">
+<div class="rc-enter">
+  <div style="margin-bottom:22px;">
+    <h1 style="font-size:1.75rem;font-weight:600;letter-spacing:-.01em;margin:0;">Admin</h1>
+    <p style="color:var(--bs-secondary-color);margin:6px 0 0;font-size:.95rem;">Manage teams, quotas and users.</p>
+  </div>
+
+  <div class="rc-card" style="padding:22px 24px;margin-bottom:22px;">
+    <h2 style="font-size:1.375rem;font-weight:600;margin:0 0 8px;letter-spacing:-.01em;">Teams</h2>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle">
+        <thead><tr style="color:var(--bs-secondary-color);font-size:.78rem;text-transform:uppercase;letter-spacing:.04em;">
+          <th style="border:0;font-weight:600;">Name</th><th style="border:0;font-weight:600;">Subdomain</th><th style="border:0;font-weight:600;">Members</th><th style="border:0;font-weight:600;min-width:180px;">Quota</th><th style="border:0;font-weight:600;">State</th><th style="border:0;font-weight:600;text-align:right;">Actions</th></tr></thead>
+        <tbody>
+        {% for t in teams %}
+          {% set used = usage.get(t.id, 0) %}
+          {% if t.quota_bytes %}{% set pct = (used / t.quota_bytes * 100) %}{% if pct > 100 %}{% set pct = 100 %}{% endif %}
+            {% set qcolor = 'var(--rc-green-500)' if pct < 70 else ('#f59e0b' if pct < 90 else '#ef4444') %}
+            {% set qlabel = (used|filesize) ~ ' / ' ~ (t.quota_bytes|filesize) %}
+          {% else %}{% set pct = 0 %}{% set qcolor = 'var(--rc-green-500)' %}{% set qlabel = (used|filesize) ~ ' / ∞' %}{% endif %}
+          <tr>
+            <td><div style="display:flex;align-items:center;gap:6px;"><input id="tn{{ t.id }}" class="form-control form-control-sm" value="{{ t.name }}" style="max-width:140px;font-weight:600;"><button type="button" onclick="setName({{ t.id }})" class="btn btn-sm" style="border:0;color:var(--bs-secondary-color);padding:2px 4px;" title="rename"><i class="ti ti-pencil" style="font-size:14px;"></i></button></div></td>
+            <td class="rc-mono" style="font-size:.82rem;color:var(--rc-green-700);">{% if t.subdomain_label %}*.{{ t.subdomain_label }}.{{ domain }}{% else %}root{% endif %}</td>
+            <td>{{ member_counts.get(t.id, 0) }}</td>
+            <td><div style="display:flex;align-items:center;gap:8px;">
+              <div style="flex:1;height:8px;border-radius:999px;background:var(--bs-border-color);overflow:hidden;min-width:90px;"><div style="height:100%;border-radius:999px;transition:width .36s cubic-bezier(.4,0,.2,1);width:{{ pct|round(0,'floor')|int }}%;background:{{ qcolor }};"></div></div>
+              <span style="font-size:.78rem;color:var(--bs-secondary-color);white-space:nowrap;">{{ qlabel }}</span></div></td>
+            <td>{% if t.suspended %}<span class="rc-pill" style="background:rgba(239,68,68,.13);color:var(--rc-bad);"><i class="ti ti-ban" style="font-size:12px;"></i> suspended</span>{% else %}<span class="rc-pill" style="background:rgba(16,185,129,.13);color:var(--rc-green-700);">active</span>{% endif %}</td>
+            <td style="text-align:right;white-space:nowrap;">
+              <input id="q{{ t.id }}" class="form-control form-control-sm d-inline-block" value="{{ (t.quota_bytes // 1048576) if t.quota_bytes else '' }}" placeholder="MB" style="width:74px;margin-right:5px;text-align:right;">
+              <button type="button" onclick="setQuota({{ t.id }})" class="btn btn-success btn-sm rounded-pill px-3" style="margin-right:5px;">Save</button>
+              <button type="button" class="btn btn-outline-danger btn-sm rounded-pill px-3" onclick="armDel(this, () => delTeam({{ t.id }}, '{{ t.name }}'))"><i class="ti ti-trash" style="font-size:13px;"></i></button>
+            </td>
+          </tr>
+        {% else %}<tr><td colspan="6" style="color:var(--bs-secondary-color);">No teams yet.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;border-top:1px dashed var(--bs-border-color);padding-top:16px;margin-top:4px;">
+      <div style="flex:1;min-width:130px;"><label style="font-size:.8rem;font-weight:500;margin-bottom:4px;display:block;">Team name</label><input id="tm_name" class="form-control form-control-sm" placeholder="New team"></div>
+      <div style="flex:1;min-width:130px;"><label style="font-size:.8rem;font-weight:500;margin-bottom:4px;display:block;">Subdomain</label><input id="tm_label" class="form-control form-control-sm" placeholder="auto from name"></div>
+      <div style="min-width:110px;"><label style="font-size:.8rem;font-weight:500;margin-bottom:4px;display:block;">Quota (MB)</label><input id="tm_quota" type="number" class="form-control form-control-sm" placeholder="∞"></div>
+      <button type="button" onclick="addTeam()" class="btn btn-success btn-sm rounded-pill px-3"><i class="ti ti-plus" style="font-size:14px;margin-right:4px;"></i>Add team</button>
+    </div>
+  </div>
+
+  <div class="rc-card" style="padding:22px 24px;">
+    <h2 style="font-size:1.375rem;font-weight:600;margin:0 0 8px;letter-spacing:-.01em;">Users</h2>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle">
+        <thead><tr style="color:var(--bs-secondary-color);font-size:.78rem;text-transform:uppercase;letter-spacing:.04em;">
+          <th style="border:0;font-weight:600;">Email</th><th style="border:0;font-weight:600;">Role</th><th style="border:0;font-weight:600;">Team</th><th style="border:0;font-weight:600;text-align:right;">Actions</th></tr></thead>
+        <tbody>
+        {% for u in users %}
+          <tr>
+            <td style="font-weight:500;">{{ u.email }}</td>
+            <td>{% if u.id == user.id %}<span class="rc-pill" style="background:rgba(16,185,129,.15);color:var(--rc-ok);">{{ u.role.value }}</span>
+              {% else %}<select class="form-select form-select-sm" style="max-width:140px;" onchange="setRole({{ u.id }}, this.value)">
+                <option value="user" {% if u.role.value=='user' %}selected{% endif %}>member</option>
+                <option value="team_admin" {% if u.role.value=='team_admin' %}selected{% endif %}>team admin</option>
+                <option value="admin" {% if u.role.value=='admin' %}selected{% endif %}>admin</option>
+              </select>{% endif %}</td>
+            <td><select class="form-select form-select-sm" style="max-width:160px;" onchange="setTeam({{ u.id }}, this.value)"><option value="">—</option>{% for t in teams %}<option value="{{ t.id }}" {% if t.id == u.team_id %}selected{% endif %}>{{ t.name }}</option>{% endfor %}</select></td>
+            <td style="text-align:right;">{% if u.id != user.id %}<button type="button" class="btn btn-outline-danger btn-sm rounded-pill px-3" onclick="armDel(this, () => delUser({{ u.id }}, '{{ u.email }}'))"><i class="ti ti-trash" style="font-size:13px;"></i></button>{% else %}<span style="color:var(--bs-secondary-color);font-size:.8rem;">you</span>{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;border-top:1px dashed var(--bs-border-color);padding-top:16px;margin-top:4px;">
+      <div style="flex:1;min-width:150px;"><label style="font-size:.8rem;font-weight:500;margin-bottom:4px;display:block;">Email</label><input id="u_email" type="email" class="form-control form-control-sm" placeholder="user@team.com"></div>
+      <div style="flex:1;min-width:120px;"><label style="font-size:.8rem;font-weight:500;margin-bottom:4px;display:block;">Password</label><input id="u_pw" type="text" class="form-control form-control-sm" placeholder="min 8 chars"></div>
+      <div style="min-width:110px;"><label style="font-size:.8rem;font-weight:500;margin-bottom:4px;display:block;">Role</label><select id="u_role" class="form-select form-select-sm"><option value="user">member</option><option value="team_admin">team admin</option><option value="admin">admin</option></select></div>
+      <div style="min-width:130px;"><label style="font-size:.8rem;font-weight:500;margin-bottom:4px;display:block;">Team</label><select id="u_team" class="form-select form-select-sm"><option value="">no team</option>{% for t in teams %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}</select></div>
+      <button type="button" onclick="addUser()" class="btn btn-success btn-sm rounded-pill px-3"><i class="ti ti-plus" style="font-size:14px;margin-right:4px;"></i>Add user</button>
+    </div>
+  </div>
+</div>
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function addTeam(){ const b={name:tm_name.value}; if(tm_label.value)b.subdomain_label=tm_label.value;
+  if(tm_quota.value)b.quota_bytes=Math.round(parseFloat(tm_quota.value)*1048576);
+  await api('POST','/api/teams',b); toast('success','Team added',tm_name.value+' created.'); reloadSoon(); }
+async function setName(id){ const v=document.getElementById('tn'+id).value.trim(); if(!v)return;
+  await api('PATCH','/api/teams/'+id,{name:v}); toast('success','Saved','Team renamed.'); reloadSoon(); }
+async function setQuota(id){ const v=document.getElementById('q'+id).value;
+  const quota_bytes = v===''?null:Math.round(parseFloat(v)*1048576);
+  await api('PATCH','/api/teams/'+id,{quota_bytes}); toast('success','Saved','Quota updated.'); reloadSoon(); }
+async function delTeam(id,name){ await api('DELETE','/api/teams/'+id); toast('success','Deleted',(name||'Team')+' removed.'); reloadSoon(); }
+async function setTeam(uid,tid){ if(!tid)return; await api('POST','/api/teams/'+tid+'/members/'+uid); toast('success','Updated','Member reassigned.'); reloadSoon(); }
+async function setRole(uid,role){ await api('PATCH','/api/auth/users/'+uid,{role:role}); toast('success','Updated','Role changed to '+role+'.'); reloadSoon(); }
+async function addUser(){ const b={email:u_email.value,password:u_pw.value,role:u_role.value}; if(u_team.value)b.team_id=+u_team.value;
+  await api('POST','/api/auth/users',b); toast('success','User added',u_email.value+' created.'); reloadSoon(); }
+async function delUser(id,email){ await api('DELETE','/api/auth/users/'+id); toast('success','Deleted',(email||'User')+' removed.'); reloadSoon(); }
+</script>
+{% endblock %}

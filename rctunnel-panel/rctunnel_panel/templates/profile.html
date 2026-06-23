@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Profile · RC-Tunnel{% endblock %}
+{% block content %}
+<main style="max-width:1040px;margin:0 auto;padding:28px 24px 80px;">
+<div class="rc-enter">
+  <div style="margin-bottom:22px;">
+    <h1 style="font-size:1.75rem;font-weight:600;letter-spacing:-.01em;margin:0;">Profile</h1>
+    <p style="color:var(--bs-secondary-color);margin:6px 0 0;font-size:.95rem;">{{ user.email }}{% if user.team %} · team: {{ user.team.name }}{% endif %} · role: {{ user.role.value }}</p>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:22px;">
+    <div class="rc-card rc-lift" style="padding:24px;">
+      <h2 style="font-size:1.125rem;font-weight:600;margin:0 0 16px;display:flex;align-items:center;gap:8px;"><i class="ti ti-mail" style="color:var(--rc-green-600);"></i>Email</h2>
+      <label style="font-size:.82rem;font-weight:500;margin-bottom:6px;display:block;">Email address</label>
+      <input id="p_email" class="form-control mb-3" value="{{ user.email }}">
+      <button type="button" onclick="changeEmail()" class="btn btn-success rounded-pill px-4">Save email</button>
+    </div>
+    <div class="rc-card rc-lift" style="padding:24px;">
+      <h2 style="font-size:1.125rem;font-weight:600;margin:0 0 16px;display:flex;align-items:center;gap:8px;"><i class="ti ti-lock" style="color:var(--rc-green-600);"></i>Password</h2>
+      <label style="font-size:.82rem;font-weight:500;margin-bottom:6px;display:block;">Current password</label>
+      <input id="p_cur" type="password" class="form-control mb-3" placeholder="••••••••">
+      <label style="font-size:.82rem;font-weight:500;margin-bottom:6px;display:block;">New password</label>
+      <input id="p_new" type="password" class="form-control mb-3" placeholder="min 8 chars">
+      <button type="button" onclick="changePassword()" class="btn btn-success rounded-pill px-4">Change password</button>
+    </div>
+  </div>
+</div>
+</main>
+{% endblock %}
+{% block scripts %}
+<script>
+async function changeEmail(){ await api('PATCH','/api/auth/me',{email:p_email.value}); toast('success','Email updated','Your email address was saved.'); }
+async function changePassword(){ await api('PATCH','/api/auth/me',{current_password:p_cur.value,new_password:p_new.value});
+  p_cur.value=''; p_new.value=''; toast('success','Password changed','Your new password is now active.'); }
+</script>
+{% endblock %}

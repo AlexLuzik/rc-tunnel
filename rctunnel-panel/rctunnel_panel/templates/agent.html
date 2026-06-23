@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}{{ agent.name }} · RC-Tunnel{% endblock %}
+{% macro typebg(t) %}{% if t in ('http','https') %}rgba(16,185,129,.15){% else %}rgba(100,116,139,.18){% endif %}{% endmacro %}
+{% macro typefg(t) %}{% if t in ('http','https') %}var(--rc-ok){% else %}var(--rc-muted){% endif %}{% endmacro %}
+{% block content %}
+<main style="max-width:1040px;margin:0 auto;padding:28px 24px 80px;">
+<div class="rc-enter">
+  <a href="/" style="display:inline-flex;align-items:center;gap:5px;color:var(--bs-secondary-color);font-size:.88rem;font-weight:500;margin-bottom:14px;"><i class="ti ti-chevron-left"></i>Back to dashboard</a>
+  <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:22px;">
+    <h1 style="font-size:1.75rem;font-weight:600;letter-spacing:-.01em;margin:0;">{{ agent.name }}</h1>
+    {% if agent.status.value=='online' %}<span style="display:inline-flex;align-items:center;gap:8px;font-weight:500;font-size:.9rem;"><span class="rc-dot"><span class="p"></span><span class="c"></span></span>online</span>
+    {% else %}<span style="display:inline-flex;align-items:center;gap:8px;color:var(--bs-secondary-color);font-weight:500;font-size:.9rem;"><span style="width:9px;height:9px;border-radius:50%;border:2px solid #94a3b8;"></span>offline</span>{% endif %}
+    {% if agent.last_ping_ms is not none and agent.status.value=='online' %}<span class="rc-pill" style="background:rgba(16,185,129,.14);color:var(--rc-ok);">{{ agent.last_ping_ms }} ms</span>{% endif %}
+    <span class="rc-pill rc-mono" style="background:rgba(16,185,129,.15);color:var(--rc-ok);font-weight:500;">{{ agent.agent_version or '—' }}</span>
+    {% if agent.cert_days_left is not none %}<span class="rc-pill" title="mTLS certificate lifetime (auto-renews under 30d)" style="background:{{ 'rgba(239,68,68,.15)' if agent.cert_days_left < 30 else 'rgba(100,116,139,.14)' }};color:{{ 'var(--rc-danger,#ef4444)' if agent.cert_days_left < 30 else 'var(--bs-secondary-color)' }};">cert {{ agent.cert_days_left }}d</span>{% endif %}
+    <span style="color:var(--bs-secondary-color);font-size:.86rem;">{{ (agent.os or '—') }}/{{ (agent.arch or '—') }}</span>
+  </div>
+
+  {% if agent.status.value != 'online' %}
+  <div class="rc-card" style="padding:20px 24px;margin-bottom:22px;">
+    <h2 style="font-size:1.125rem;font-weight:600;margin:0 0 12px;">Install command</h2>
+    <div style="display:flex;gap:10px;align-items:stretch;">
+      <code id="installCmd" class="rc-mono" style="flex:1;font-size:.84rem;background:var(--rc-input-bg);border:1px solid var(--bs-border-color);border-radius:10px;padding:12px 14px;overflow-x:auto;white-space:nowrap;color:var(--bs-body-color);">{{ install_cmd }}</code>
+      <button type="button" onclick="copyText(document.getElementById('installCmd').textContent,'Install command copied.')" class="btn btn-outline-secondary rounded-pill px-3" style="white-space:nowrap;"><i class="ti ti-copy" style="font-size:15px;margin-right:5px;"></i>Copy</button>
+    </div>
+    <p style="color:var(--bs-secondary-color);font-size:.82rem;margin:10px 0 0;">Run this on the target host. It disappears once the agent connects.</p>
+  </div>
+  {% else %}
+  <div class="rc-card" style="padding:16px 24px;margin-bottom:22px;display:flex;align-items:center;gap:10px;">
+    <i class="ti ti-circle-check" style="font-size:18px;color:var(--rc-ok);"></i>
+    <span style="font-size:.9rem;">Agent is connected — installation complete.</span>
+  </div>
+  {% endif %}
+
+  <div class="rc-card" style="padding:20px 24px;margin-bottom:22px;">
+    <h2 style="font-size:1.375rem;font-weight:600;margin:0 0 8px;letter-spacing:-.01em;">Tunnels</h2>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle">
+        <thead><tr style="color:var(--bs-secondary-color);font-size:.78rem;text-transform:uppercase;letter-spacing:.04em;">
+          <th style="border:0;font-weight:600;">Name</th><th style="border:0;font-weight:600;">Type</th><th style="border:0;font-weight:600;">Local</th><th style="border:0;font-weight:600;">Exposes</th><th style="border:0;font-weight:600;">Traffic</th><th style="border:0;font-weight:600;">On</th><th style="border:0;font-weight:600;text-align:right;">Actions</th></tr></thead>
+        <tbody>
+        {% for t in tunnels %}{% set ty = t.type.value %}
+          <tr>
+            <td>
+              <div style="font-weight:600;">{{ t.name }}</div>
+              <div style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap;">
+                {% if t.use_encryption %}<span class="rc-opt">enc</span>{% endif %}
+                {% if t.use_compression %}<span class="rc-opt">cmp</span>{% endif %}
+                {% if t.bandwidth_limit %}<span class="rc-opt">{{ t.bandwidth_limit }}</span>{% endif %}
+                {% if t.health_check_type %}<span class="rc-opt">hc:{{ t.health_check_type }}</span>{% endif %}
+              </div>
+            </td>
+            <td><span class="rc-pill" style="background:{{ typebg(ty) }};color:{{ typefg(ty) }};">{{ ty }}</span></td>
+            <td class="rc-mono" style="font-size:.82rem;">{{ t.local_ip }}:{{ t.local_port }}</td>
+            <td class="rc-mono" style="font-size:.82rem;color:var(--rc-ok);">
+              {%- if ty in ('tcp','udp') %}{{ node.public_addr }}:{{ t.remote_port }}
+              {%- elif t.subdomain %}{{ t.subdomain }}{% if team_label %}.{{ team_label }}{% endif %}.{{ domain }}
+              {%- elif t.custom_domains %}{{ t.custom_domains }}{%- else %}—{% endif %}</td>
+            <td style="font-size:.82rem;white-space:nowrap;color:var(--bs-secondary-color);"><i class="ti ti-arrow-down-left" style="color:var(--rc-green-600);"></i> {{ t.bytes_in|filesize }} <i class="ti ti-arrow-up-right" style="color:#0ea5a4;"></i> {{ t.bytes_out|filesize }}</td>
+            <td><div class="form-check form-switch" style="margin:0;"><input class="form-check-input" type="checkbox" {% if t.enabled %}checked{% endif %} onchange="toggleTunnel({{ t.id }}, this.checked)" {% if user.role.value=='demo' %}disabled{% endif %} style="cursor:pointer;"></div></td>
+            <td style="text-align:right;white-space:nowrap;">
+              {% if user.role.value != 'demo' %}
+              <button type="button" onclick="toggleEdit({{ t.id }})" class="btn btn-outline-secondary btn-sm rounded-pill px-3" style="margin-right:5px;"><i class="ti ti-pencil" style="font-size:13px;margin-right:3px;"></i>Edit</button>
+              <button type="button" class="btn btn-outline-danger btn-sm rounded-pill px-3" onclick="armDel(this, () => delTunnel({{ t.id }}, '{{ t.name }}'))"><i class="ti ti-trash" style="font-size:13px;"></i></button>
+              {% else %}<span style="color:var(--bs-secondary-color);font-size:.8rem;">read-only</span>{% endif %}
+            </td>
+          </tr>
+          <tr id="edit-{{ t.id }}" style="display:none;"><td colspan="7" style="background:rgba(16,185,129,.07);">
+            <div class="rc-enter" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end;padding:6px 4px;">
+              <div style="min-width:120px;"><label style="font-size:.78rem;font-weight:500;margin-bottom:4px;display:block;">Local IP</label><input id="e_lip_{{ t.id }}" class="form-control form-control-sm" value="{{ t.local_ip }}"></div>
+              <div style="min-width:100px;"><label style="font-size:.78rem;font-weight:500;margin-bottom:4px;display:block;">Local port</label><input id="e_lport_{{ t.id }}" type="number" class="form-control form-control-sm" value="{{ t.local_port }}"></div>
+              {% if ty in ('tcp','udp') %}<div style="min-width:110px;"><label style="font-size:.78rem;font-weight:500;margin-bottom:4px;display:block;">Remote port</label><input id="e_rport_{{ t.id }}" type="number" class="form-control form-control-sm" value="{{ t.remote_port or '' }}"></div>{% endif %}
+              {% if ty in ('http','https') %}<div style="min-width:120px;"><label style="font-size:.78rem;font-weight:500;margin-bottom:4px;display:block;">Subdomain</label><input id="e_sub_{{ t.id }}" class="form-control form-control-sm" value="{{ t.subdomain or '' }}"></div>{% endif %}
+              <div style="min-width:120px;"><label style="font-size:.78rem;font-weight:500;margin-bottom:4px;display:block;">Bandwidth</label><input id="e_bw_{{ t.id }}" class="form-control form-control-sm" value="{{ t.bandwidth_limit or '' }}" placeholder="e.g. 1MB"></div>
+              <label class="form-check" style="margin-bottom:6px;"><input id="e_enc_{{ t.id }}" class="form-check-input" type="checkbox" {% if t.use_encryption %}checked{% endif %}> <span style="font-size:.82rem;">enc</span></label>
+              <label class="form-check" style="margin-bottom:6px;"><input id="e_cmp_{{ t.id }}" class="form-check-input" type="checkbox" {% if t.use_compression %}checked{% endif %}> <span style="font-size:.82rem;">cmp</span></label>
+              <button type="button" onclick="saveEdit({{ t.id }}, '{{ ty }}')" class="btn btn-success btn-sm rounded-pill px-3">Save</button>
+              <button type="button" onclick="toggleEdit({{ t.id }})" class="btn btn-outline-secondary btn-sm rounded-pill px-3">Cancel</button>
+            </div>
+          </td></tr>
+        {% else %}<tr><td colspan="7" style="color:var(--bs-secondary-color);">No tunnels yet.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if user.role.value != 'demo' %}
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;border-top:1px dashed var(--bs-border-color);padding-top:16px;margin-top:4px;">
+      <div style="min-width:120px;"><label style="font-size:.8rem;font-weight:500;margin-bottom:4px;display:block;">Type</label><select id="t_type" class="form-select form-select-sm" onchange="onType()"><option value="http">http</option><option value="https">https</option><option value="tcp">tcp</option><option value="udp">udp</option></select></div>
+      <div style="flex:1;min-width:120px;"><label style="font-size:.8rem;font-weight:500;margin-bottom:4px;display:block;">Name</label><input id="t_name" class="form-control form-control-sm" placeholder="tunnel-name"></div>
+      <div style="flex:1;min-width:130px;"><label style="font-size:.8rem;font-weight:500;margin-bottom:4px;display:block;">Local</label><input id="t_local" class="form-control form-control-sm" placeholder="127.0.0.1:8080 or auto:22"></div>
+      <span id="t_sub_wrap" style="flex:1;min-width:120px;"><label style="font-size:.8rem;font-weight:500;margin-bottom:4px;display:block;">Subdomain <span style="color:var(--bs-secondary-color);font-weight:400;">(up to {{ subdomain_max_depth }} levels)</span></label><input id="t_sub" class="form-control form-control-sm" placeholder="app.team"></span>
+      <button type="button" onclick="addTunnel()" class="btn btn-success btn-sm rounded-pill px-3"><i class="ti ti-plus" style="font-size:14px;margin-right:4px;"></i>Add tunnel</button>
+    </div>
+    {% endif %}
+  </div>
+</div>
+</main>
+<style>.rc-opt{font-size:.68rem;font-weight:600;letter-spacing:.03em;text-transform:uppercase;background:rgba(16,185,129,.12);color:var(--rc-ok);padding:1px 6px;border-radius:5px;}</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const AID = {{ agent.id }};
+function onType(){ const t=t_type.value;
+  t_sub_wrap.style.display=(t==='http'||t==='https')?'':'none'; }
+onType();
+function parseLocal(v){ v=(v||'').trim(); let ip='auto',port=v;
+  if(v.indexOf(':')>=0){ const i=v.lastIndexOf(':'); ip=v.slice(0,i)||'auto'; port=v.slice(i+1); } return {ip:ip,port:+port}; }
+async function addTunnel(){ const t=t_type.value, L=parseLocal(t_local.value);
+  const b={name:t_name.value,type:t,local_ip:L.ip,local_port:L.port};
+  if((t==='http'||t==='https') && t_sub.value) b.subdomain=t_sub.value;
+  await api('POST','/api/agents/'+AID+'/tunnels',b); toast('success','Tunnel added',t_name.value+' created.'); reloadSoon(); }
+async function delTunnel(id,name){ await api('DELETE','/api/tunnels/'+id); toast('success','Deleted',(name||'Tunnel')+' removed.'); reloadSoon(); }
+async function toggleTunnel(id,on){ await api('PATCH','/api/tunnels/'+id,{enabled:on}); toast(on?'success':'info',on?'Enabled':'Disabled','Tunnel '+(on?'is serving traffic.':'is paused.')); }
+function toggleEdit(id){ const r=document.getElementById('edit-'+id); r.style.display=(r.style.display==='none'?'':'none'); }
+function _v(id){ const e=document.getElementById(id); return e?e.value:undefined; }
+async function saveEdit(id,type){ const b={local_ip:_v('e_lip_'+id),local_port:+_v('e_lport_'+id),
+    bandwidth_limit:_v('e_bw_'+id)||null,use_encryption:document.getElementById('e_enc_'+id).checked,use_compression:document.getElementById('e_cmp_'+id).checked};
+  if(type==='tcp'||type==='udp'){ const rp=_v('e_rport_'+id); if(rp) b.remote_port=+rp; }
+  if(type==='http'||type==='https') b.subdomain=_v('e_sub_'+id)||null;
+  await api('PATCH','/api/tunnels/'+id,b); toast('success','Saved','Tunnel updated.'); reloadSoon(); }
+</script>
+{% endblock %}

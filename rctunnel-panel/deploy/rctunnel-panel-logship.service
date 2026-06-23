@@ -1,0 +1,16 @@
+[Unit]
+Description=rcpanel access-log shipper -> OpenSearch
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/rctunnel-panel
+EnvironmentFile=/etc/rctunnel-panel/master.env
+Environment=RCTUNNEL_CADDY_ACCESS_LOG=/var/lib/caddy/access.log
+ExecStart=/opt/rctunnel-panel/.venv/bin/python -m rctunnel_panel.logship
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

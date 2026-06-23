@@ -1,0 +1,21 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Local data & secrets — NEVER commit
+*.db
+*.db-*
+pki/
+*.key
+*.pem
+*.crt
+.env
+/data/
+node.json
+
+# OS
+.DS_Store

@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} · RC-Tunnel{% endblock %}
+{% macro tab_link(key, icon, label) %}
+<a href="{{ base }}?tab={{ key }}" style="border:0;border-radius:999px;padding:7px 16px;font-weight:600;font-size:.86rem;text-decoration:none;{% if tab==key %}background:var(--rc-green-600);color:#fff;{% else %}background:transparent;color:var(--bs-body-color);{% endif %}"><i class="ti {{ icon }}" style="font-size:15px;margin-right:5px;"></i>{{ label }}</a>
+{% endmacro %}
+{% block content %}
+<main style="max-width:1040px;margin:0 auto;padding:28px 24px 80px;">
+<div class="rc-enter">
+  <div style="display:flex;align-items:end;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:22px;">
+    <div>
+      <h1 style="font-size:1.75rem;font-weight:600;letter-spacing:-.01em;margin:0;">{{ title }}</h1>
+      <p style="color:var(--bs-secondary-color);margin:6px 0 0;font-size:.95rem;">{{ subtitle }}{% if global_view %} Target agent version: <span class="rc-mono">{{ target_version or '—' }}</span>.{% endif %}</p>
+    </div>
+    {% if tab in ('audit','conn') %}<a href="{{ base }}/export?tab={{ tab }}" class="btn btn-outline-secondary btn-sm rounded-pill px-3"><i class="ti ti-download" style="font-size:14px;margin-right:5px;"></i>Export</a>{% endif %}
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:16px;margin-bottom:22px;">
+    {% for c in [
+      {'l':'Online now','v':(online|string)+' / '+(total|string),'s':'devices connected','i':'ti-router'},
+      {'l':'Requests 24h','v':req24,'s':'across all tunnels','i':'ti-arrows-exchange'},
+      {'l':'Audit events','v':audit24,'s':'last 24 hours','i':'ti-history'},
+      {'l':'Devices','v':total,'s':'in scope','i':'ti-heartbeat'} ] %}
+    <div class="rc-card rc-lift" style="padding:18px 20px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+        <span style="width:30px;height:30px;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;background:rgba(16,185,129,.15);color:var(--rc-ok);"><i class="ti {{ c.i }}" style="font-size:17px;"></i></span>
+        <span style="font-size:.78rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--bs-secondary-color);">{{ c.l }}</span>
+      </div>
+      <div style="font-size:1.7rem;font-weight:700;letter-spacing:-.02em;line-height:1;">{{ c.v }}</div>
+      <div style="font-size:.8rem;color:var(--bs-secondary-color);margin-top:5px;">{{ c.s }}</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div style="display:inline-flex;gap:3px;background:var(--rc-input-bg);border:1px solid var(--bs-border-color);border-radius:999px;padding:4px;margin-bottom:18px;flex-wrap:wrap;">
+    {{ tab_link('devices','ti-devices','Devices') }}{{ tab_link('uptime','ti-heartbeat','Uptime') }}{{ tab_link('audit','ti-history','Audit log') }}{{ tab_link('conn','ti-arrows-exchange','Connections') }}
+  </div>
+
+  {% if tab == 'devices' %}
+  <div class="rc-card rc-enter" style="padding:8px 8px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;padding:10px 12px 4px;">
+      <h2 style="font-size:1.125rem;font-weight:600;margin:0;">{% if global_view %}Every device across all teams{% else %}Your devices{% endif %}</h2>
+      <div style="position:relative;">
+        <i class="ti ti-search" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--bs-secondary-color);font-size:14px;"></i>
+        <input id="fleetSearch" oninput="filterFleet(this.value)" class="form-control form-control-sm" placeholder="Search device, team or IP" style="padding-left:30px;min-width:220px;">
+      </div>
+    </div>
+    <div class="table-responsive"><table class="table table-hover align-middle" style="margin-bottom:0;">
+      <thead><tr style="color:var(--bs-secondary-color);font-size:.78rem;text-transform:uppercase;letter-spacing:.04em;">
+        <th style="border:0;font-weight:600;"></th><th style="border:0;font-weight:600;">Device</th>{% if global_view %}<th style="border:0;font-weight:600;">Team</th>{% endif %}<th style="border:0;font-weight:600;">Status</th><th style="border:0;font-weight:600;">Version</th><th style="border:0;font-weight:600;">OS</th><th style="border:0;font-weight:600;">Last seen</th><th style="border:0;font-weight:600;text-align:right;">Data</th></tr></thead>
+      <tbody>
+      {% for d in devices %}
+        <tr class="fleet-row" data-s="{{ (d.name ~ ' ' ~ d.team ~ ' ' ~ d.lan ~ ' ' ~ d.node)|lower }}" style="cursor:pointer;" onclick="toggleDev({{ d.id }})">
+          <td style="width:30px;"><i id="chev-{{ d.id }}" class="ti ti-chevron-right" style="transition:transform .2s;color:var(--bs-secondary-color);"></i></td>
+          <td><div style="font-weight:600;">{{ d.name }}</div><div style="font-size:.76rem;color:var(--bs-secondary-color);">{{ d.node }} · {{ d.tunnels }} tunnels</div></td>
+          {% if global_view %}<td style="font-size:.86rem;">{{ d.team }}</td>{% endif %}
+          <td>{% if d.online %}<span style="display:inline-flex;align-items:center;gap:8px;font-weight:500;font-size:.86rem;"><span class="rc-dot"><span class="p"></span><span class="c"></span></span>online</span>{% else %}<span style="color:var(--bs-secondary-color);font-weight:500;font-size:.86rem;"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;border:2px solid #94a3b8;margin-right:6px;"></span>offline</span>{% endif %}</td>
+          <td><span class="rc-mono rc-pill" style="font-size:.78rem;background:{{ 'rgba(245,158,11,.16)' if d.outdated else 'rgba(16,185,129,.15)' }};color:{{ 'var(--rc-warn)' if d.outdated else 'var(--rc-ok)' }};">{% if d.outdated %}<i class="ti ti-alert-triangle" style="font-size:11px;"></i> {% endif %}{{ d.version }}</span></td>
+          <td style="font-size:.84rem;color:var(--bs-secondary-color);">{{ d.os }}</td>
+          <td style="font-size:.84rem;color:var(--bs-secondary-color);">{{ d.seen }}</td>
+          <td class="rc-mono" style="text-align:right;font-size:.82rem;color:var(--bs-secondary-color);">{{ d.data }}</td>
+        </tr>
+        <tr id="dev-{{ d.id }}" class="fleet-row" data-s="{{ (d.name ~ ' ' ~ d.team ~ ' ' ~ d.lan)|lower }}" style="display:none;">
+          <td colspan="{{ 8 if global_view else 7 }}" style="background:rgba(16,185,129,.07);">
+            <div class="rc-enter" style="display:flex;gap:28px;flex-wrap:wrap;padding:6px 10px;">
+              <div style="font-size:.82rem;"><span style="color:var(--bs-secondary-color);">LAN IP</span><br><span class="rc-mono">{{ d.lan }}</span></div>
+              <div style="font-size:.82rem;"><span style="color:var(--bs-secondary-color);">Ping</span><br><span class="rc-mono">{{ d.ping if d.ping is not none else '—' }}{% if d.ping is not none %} ms{% endif %}</span></div>
+              <div style="font-size:.82rem;"><span style="color:var(--bs-secondary-color);">Tunnels</span><br><span class="rc-mono">{{ d.tunnels }}</span></div>
+              <div style="font-size:.82rem;flex:1;min-width:220px;">
+                <span style="color:var(--bs-secondary-color);">Recent events</span>
+                {% for ev in d.events %}<div style="margin-top:3px;"><span class="rc-mono" style="font-size:.78rem;color:var(--bs-secondary-color);">{{ ev.time }}</span> · {{ ev.event }}</div>{% else %}<div class="rc-mono" style="font-size:.78rem;color:var(--bs-secondary-color);margin-top:3px;">no events</div>{% endfor %}
+              </div>
+            </div>
+          </td>
+        </tr>
+      {% else %}<tr><td colspan="8" style="color:var(--bs-secondary-color);padding:14px;">No devices.</td></tr>{% endfor %}
+      </tbody></table></div>
+  </div>
+
+  {% elif tab == 'uptime' %}
+  <div class="rc-card rc-enter" style="padding:22px 24px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:8px;">
+      <h2 style="font-size:1.375rem;font-weight:600;margin:0;">Device uptime</h2>
+      <span style="font-size:.8rem;color:var(--bs-secondary-color);">Last 40 days · 99.0% SLA target</span>
+    </div>
+    <div class="table-responsive"><table class="table table-hover align-middle">
+      <thead><tr style="color:var(--bs-secondary-color);font-size:.78rem;text-transform:uppercase;letter-spacing:.04em;">
+        <th style="border:0;font-weight:600;">Device</th><th style="border:0;font-weight:600;min-width:280px;">40-day availability</th><th style="border:0;font-weight:600;">Uptime</th><th style="border:0;font-weight:600;">Status</th></tr></thead>
+      <tbody>
+      {% for d in uptime %}
+        <tr>
+          <td><div style="font-weight:600;">{{ d.name }}</div><div style="font-size:.78rem;color:var(--bs-secondary-color);">{{ d.node }}</div></td>
+          <td><div style="display:flex;gap:2px;align-items:flex-end;height:24px;">{% for col,day in d.cells %}<span title="{{ day }}" style="flex:1;min-width:4px;height:22px;border-radius:2px;background:{{ col }};"></span>{% endfor %}</div></td>
+          <td><span class="rc-pill" style="background:{{ 'rgba(16,185,129,.15)' if d.up_ok else 'rgba(245,158,11,.16)' }};color:{{ 'var(--rc-ok)' if d.up_ok else 'var(--rc-warn)' }};">{{ d.up }}</span></td>
+          <td>{% if d.online %}<span style="display:inline-flex;align-items:center;gap:8px;font-weight:500;font-size:.88rem;"><span class="rc-dot"><span class="p"></span><span class="c"></span></span>online</span>{% else %}<span style="color:var(--bs-secondary-color);font-weight:500;font-size:.88rem;"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;border:2px solid #94a3b8;margin-right:6px;"></span>offline</span>{% endif %}</td>
+        </tr>
+      {% else %}<tr><td colspan="4" style="color:var(--bs-secondary-color);">No devices.</td></tr>{% endfor %}
+      </tbody></table></div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;border-top:1px dashed var(--bs-border-color);padding-top:14px;margin-top:4px;font-size:.78rem;color:var(--bs-secondary-color);">
+      <span><span style="display:inline-block;width:11px;height:11px;border-radius:2px;background:rgba(16,185,129,.8);"></span> Operational</span>
+      <span><span style="display:inline-block;width:11px;height:11px;border-radius:2px;background:#f59e0b;"></span> Degraded</span>
+      <span><span style="display:inline-block;width:11px;height:11px;border-radius:2px;background:var(--bs-border-color);"></span> No data</span>
+    </div>
+  </div>
+
+  {% elif tab == 'audit' %}
+  <div class="rc-card rc-enter" style="padding:22px 24px;">
+    <h2 style="font-size:1.375rem;font-weight:600;margin:0 0 10px;">Audit log{% if global_view %} · all teams{% endif %}</h2>
+    <div class="table-responsive"><table class="table table-hover align-middle" style="margin-bottom:0;">
+      <thead><tr style="color:var(--bs-secondary-color);font-size:.78rem;text-transform:uppercase;letter-spacing:.04em;">
+        <th style="border:0;font-weight:600;">Time</th><th style="border:0;font-weight:600;">Actor</th><th style="border:0;font-weight:600;">Action</th><th style="border:0;font-weight:600;">Target</th><th style="border:0;font-weight:600;">Source IP</th></tr></thead>
+      <tbody>
+      {% for e in audit %}
+        {% set ab = 'rgba(16,185,129,.15)' if e.action=='create' else ('rgba(20,184,166,.18)' if e.action=='update' else ('rgba(239,68,68,.14)' if e.action=='delete' else 'rgba(100,116,139,.16)')) %}
+        {% set ac = 'var(--rc-ok)' if e.action=='create' else ('var(--rc-info)' if e.action=='update' else ('var(--rc-bad)' if e.action=='delete' else 'var(--rc-muted)')) %}
+        <tr>
+          <td class="rc-mono" style="font-size:.8rem;white-space:nowrap;color:var(--bs-secondary-color);">{{ e.time }}</td>
+          <td style="font-weight:500;font-size:.88rem;">{{ e.actor }}</td>
+          <td><span class="rc-pill rc-mono" style="font-size:.76rem;background:{{ ab }};color:{{ ac }};">{{ e.label }}</span></td>
+          <td style="font-size:.86rem;">{{ e.target }}</td>
+          <td class="rc-mono" style="font-size:.8rem;color:var(--bs-secondary-color);">{{ e.ip or '—' }}</td>
+        </tr>
+      {% else %}<tr><td colspan="5" style="color:var(--bs-secondary-color);">No audit events yet.</td></tr>{% endfor %}
+      </tbody></table></div>
+  </div>
+
+  {% else %}
+  <div class="rc-card rc-enter" style="padding:22px 24px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+      <h2 style="font-size:1.375rem;font-weight:600;margin:0;">Requests &amp; connections{% if global_view %} · all teams{% endif %}</h2>
+      <span style="display:inline-flex;align-items:center;gap:6px;font-size:.76rem;font-weight:600;color:var(--rc-ok);background:rgba(16,185,129,.13);padding:2px 9px;border-radius:999px;"><span class="rc-dot" style="width:7px;height:7px;"><span class="p"></span><span class="c"></span></span>live</span>
+    </div>
+    <div class="table-responsive"><table class="table table-hover align-middle" style="margin-bottom:0;">
+      <thead><tr style="color:var(--bs-secondary-color);font-size:.78rem;text-transform:uppercase;letter-spacing:.04em;">
+        <th style="border:0;font-weight:600;">Time</th><th style="border:0;font-weight:600;">Agent · Tunnel</th><th style="border:0;font-weight:600;">Method</th><th style="border:0;font-weight:600;">Source</th><th style="border:0;font-weight:600;">Target</th><th style="border:0;font-weight:600;">Status</th><th style="border:0;font-weight:600;text-align:right;">Latency</th><th style="border:0;font-weight:600;text-align:right;">Bytes</th></tr></thead>
+      <tbody>
+      {% for c in conn %}
+        {% set sc = (c.status or 0) %}
+        {% set scol = 'var(--rc-ok)' if sc<300 else ('var(--rc-info)' if sc<400 else ('var(--rc-warn)' if sc<500 else 'var(--rc-bad)')) %}
+        {% set sbg = 'rgba(16,185,129,.15)' if sc<300 else ('rgba(20,184,166,.18)' if sc<400 else ('rgba(245,158,11,.16)' if sc<500 else 'rgba(239,68,68,.14)')) %}
+        <tr>
+          <td class="rc-mono" style="font-size:.8rem;white-space:nowrap;color:var(--bs-secondary-color);">{{ c.time }}</td>
+          <td style="font-size:.86rem;"><span style="font-weight:600;">{{ c.agent or '—' }}</span> <span style="color:var(--bs-secondary-color);">· {{ c.tunnel or '—' }}</span></td>
+          <td><span class="rc-mono" style="font-size:.74rem;font-weight:700;background:rgba(100,116,139,.16);color:var(--rc-muted);padding:1px 8px;border-radius:6px;">{{ c.method }}</span></td>
+          <td class="rc-mono" style="font-size:.8rem;color:var(--bs-secondary-color);">{{ c.src or '—' }}</td>
+          <td class="rc-mono" style="font-size:.8rem;">{{ c.target }}</td>
+          <td><span class="rc-mono rc-pill" style="font-size:.76rem;background:{{ sbg }};color:{{ scol }};">{{ c.status }}</span></td>
+          <td class="rc-mono" style="text-align:right;font-size:.8rem;color:var(--bs-secondary-color);">{{ c.lat }} ms</td>
+          <td class="rc-mono" style="text-align:right;font-size:.8rem;color:var(--bs-secondary-color);">{{ c.bytes }}</td>
+        </tr>
+      {% else %}<tr><td colspan="8" style="color:var(--bs-secondary-color);">No requests logged yet.</td></tr>{% endfor %}
+      </tbody></table></div>
+  </div>
+  {% endif %}
+</div>
+</main>
+{% endblock %}
+{% block scripts %}
+<script>
+function toggleDev(id){ const r=document.getElementById('dev-'+id), c=document.getElementById('chev-'+id);
+  const open=r.style.display==='none'; r.style.display=open?'':'none'; if(c) c.style.transform=open?'rotate(90deg)':'rotate(0deg)'; }
+function filterFleet(q){ q=(q||'').trim().toLowerCase();
+  document.querySelectorAll('tr.fleet-row').forEach(function(r){
+    if(r.id && r.id.startsWith('dev-')) return;
+    r.style.display = (!q || (r.dataset.s||'').indexOf(q)>=0) ? '' : 'none'; }); }
+</script>
+{% endblock %}

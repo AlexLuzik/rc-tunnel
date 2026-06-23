@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Sign in · RC-Tunnel{% endblock %}
+{% block content %}
+<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:radial-gradient(1200px 600px at 50% -10%,var(--rc-green-100),transparent 60%),var(--bs-body-bg);">
+  <div class="rc-card rc-enter" style="width:100%;max-width:380px;padding:32px 30px;">
+    <div style="display:flex;flex-direction:column;align-items:center;text-align:center;margin-bottom:22px;">
+      <span style="display:inline-flex;width:46px;height:46px;border-radius:13px;background:linear-gradient(135deg,#34d399,#059669);align-items:center;justify-content:center;box-shadow:0 8px 20px rgba(5,150,105,.4);margin-bottom:14px;"><i class="ti ti-arrow-ramp-right-2" style="color:#fff;font-size:26px;"></i></span>
+      <h1 style="font-size:1.5rem;font-weight:600;letter-spacing:-.02em;margin:0;">RC-Tunnel</h1>
+      <p style="color:var(--bs-secondary-color);font-size:.9rem;margin:6px 0 0;">Welcome back — sign in to your control panel.</p>
+    </div>
+    {% if error %}<div class="rc-pill" style="display:block;text-align:center;background:rgba(239,68,68,.13);color:var(--rc-bad);margin-bottom:14px;">{{ error }}</div>{% endif %}
+    <form method="post" action="/login">
+      <div class="form-floating mb-3">
+        <input type="email" name="email" class="form-control" id="loginEmail" placeholder="you@company.com" required>
+        <label for="loginEmail">Email address</label>
+      </div>
+      <div class="form-floating mb-3">
+        <input type="password" name="password" class="form-control" id="loginPass" placeholder="Password" required>
+        <label for="loginPass">Password</label>
+      </div>
+      <button type="submit" class="btn btn-success w-100 py-2 rounded-pill">Sign in</button>
+    </form>
+    <div style="display:flex;align-items:center;gap:10px;margin:18px 0 14px;color:var(--bs-secondary-color);font-size:.8rem;"><span style="flex:1;height:1px;background:var(--bs-border-color);"></span>or<span style="flex:1;height:1px;background:var(--bs-border-color);"></span></div>
+    <a href="/demo" class="btn btn-outline-secondary w-100 py-2 rounded-pill"><i class="ti ti-eye" style="margin-right:6px;"></i>Explore the live demo</a>
+    <p style="text-align:center;color:var(--bs-secondary-color);font-size:.76rem;margin:10px 0 0;">No signup — read-only sample team &amp; tunnels.</p>
+  </div>
+</div>
+{% endblock %}

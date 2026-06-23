@@ -1,0 +1,20 @@
+[Unit]
+Description=rcpanel master (web/API + mTLS control plane)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/rctunnel-panel
+EnvironmentFile=/etc/rctunnel-panel/master.env
+ExecStart=/opt/rctunnel-panel/.venv/bin/python -m rctunnel_panel
+Restart=always
+RestartSec=5
+# hardening
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/rctunnel-panel /var/www/rcpanel-dl
+
+[Install]
+WantedBy=multi-user.target
