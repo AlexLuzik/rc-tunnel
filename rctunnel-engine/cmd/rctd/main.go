@@ -103,6 +103,15 @@ func main() {
 		tlsCfg.ClientCAs = pool
 		tlsCfg.ClientAuth = tls.RequireAndVerifyClientCert
 	}
+	// Without mTLS, client identity falls back to the agent-supplied hello.ClientID
+	// (spoofable) and owner-binding/stat-attribution fail open. Refuse this in any
+	// multi-tenant setup (grant enforcement on); warn for single-tenant token-only.
+	if *caFile == "" {
+		if *grantSecret != "" {
+			log.Fatal("rctd: -grant-secret is set but -ca is missing — mTLS is required for tenant isolation")
+		}
+		log.Println("rctd: WARNING: -ca not set — mTLS disabled, no cross-tenant isolation (single-tenant only)")
+	}
 
 	srv := server.New(server.Config{
 		ControlAddr:  *control,

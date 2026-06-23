@@ -140,9 +140,13 @@ function toast(type,title,msg){
   var el=document.createElement('div'); el.setAttribute('role','status');
   el.style.cssText='position:relative;overflow:hidden;background:var(--rc-card-bg);border:1px solid var(--bs-border-color);border-radius:12px;box-shadow:0 12px 32px rgba(6,95,70,.18);padding:13px 14px;display:flex;gap:11px;align-items:flex-start;animation:rc-slidein .26s cubic-bezier(.34,1.56,.64,1) both;';
   el.innerHTML='<span style="flex:none;width:26px;height:26px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;background:'+m.bg+';color:'+m.c+';"><i class="ti '+m.i+'" style="font-size:15px;"></i></span>'
-    +'<div style="flex:1;min-width:0;"><div style="font-weight:600;font-size:.9rem;">'+title+'</div><div style="font-size:.82rem;color:var(--bs-secondary-color);word-break:break-word;">'+(msg||'')+'</div></div>'
+    +'<div style="flex:1;min-width:0;"><div class="rc-toast-t" style="font-weight:600;font-size:.9rem;"></div><div class="rc-toast-m" style="font-size:.82rem;color:var(--bs-secondary-color);word-break:break-word;"></div></div>'
     +'<button type="button" style="flex:none;background:none;border:0;color:var(--bs-secondary-color);cursor:pointer;padding:0;line-height:1;"><i class="ti ti-x" style="font-size:15px;"></i></button>'
     +'<span style="position:absolute;left:0;bottom:0;height:3px;background:'+m.bar+';animation:rc-toastbar 4s linear forwards;"></span>';
+  // set message text via textContent (never innerHTML) so a reflected server
+  // error string can't inject markup into the operator's page
+  el.querySelector('.rc-toast-t').textContent=title||'';
+  el.querySelector('.rc-toast-m').textContent=msg||'';
   el.querySelector('button').onclick=function(){ el.remove(); };
   document.getElementById('rc-toasts').appendChild(el);
   setTimeout(function(){ el.remove(); }, 4000);

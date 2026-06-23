@@ -332,6 +332,10 @@ func (c *Client) send(m *proto.Msg) {
 // register opens the listeners/vhosts for one proxy and records an entry with
 // teardown closures in c.regs. Caller holds c.regMu.
 func (c *Client) register(p proto.ProxySpec) proto.ProxyStatus {
+	// Bound the agent-controlled proxy name (it keys the stats map).
+	if p.Name == "" || len(p.Name) > 64 {
+		return proto.ProxyStatus{Name: p.Name, Error: "invalid proxy name"}
+	}
 	// Ownership: only register ports/hosts this identity's grant authorizes.
 	if c.grant != nil {
 		switch p.Type {
@@ -435,10 +439,11 @@ func (c *Client) register(p proto.ProxySpec) proto.ProxyStatus {
 func (c *Client) cleanup() {
 	close(c.done)
 	c.regMu.Lock()
-	for _, e := range c.regs {
+	for name, e := range c.regs {
 		for _, cl := range e.closers {
 			cl()
 		}
+		c.s.stats.Delete(c.cn + "\x00" + name) // bound the stats map (don't leak per-name entries)
 	}
 	c.regs = map[string]*regEntry{}
 	c.regMu.Unlock()
@@ -539,6 +544,11 @@ func (c *Client) udpServe(uc *net.UDPConn, proxyName string, stop chan struct{})
 		}
 		c.s.pend.Delete(connID)
 		if work == nil {
+			select { // close a work conn that raced in after the timeout (else it leaks)
+			case w := <-pr.ready:
+				w.Close()
+			default:
+			}
 			time.Sleep(backoff)
 			if backoff < 5*time.Second {
 				backoff *= 2
