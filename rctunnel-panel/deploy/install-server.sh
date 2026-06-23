@@ -185,7 +185,7 @@ ok "caddy user uid:gid = ${CADDY_UID}:${CADDY_GID}"
 mkdir -p /opt/rctunnel-stack/caddy-data /opt/rctunnel-panel /opt/rctunnel-engine /opt/rctunnel-node \
          /etc/rctunnel-panel /etc/caddy /var/lib/rctunnel-panel/pki /var/www/rctunnel-panel-dl /var/lib/caddy
 chown -R "${CADDY_UID}:${CADDY_GID}" /var/lib/caddy /opt/rctunnel-stack/caddy-data
-chmod 700 /etc/rctunnel-panel
+chmod 700 /etc/rctunnel-panel /var/lib/rctunnel-panel/pki   # CA key + serials: root-only
 ok "directories created"
 
 # OpenSearch needs a high mmap count on the host or it refuses to start.
@@ -436,6 +436,7 @@ volumes:
   pgdata:
   osdata:
 EOF
+chmod 600 /opt/rctunnel-stack/docker-compose.yml   # embeds POSTGRES_PASSWORD
 ok "compose written (incl. OpenSearch, heap ${OS_HEAP})"
 
 # ---- build images + start stack ---------------------------------------------

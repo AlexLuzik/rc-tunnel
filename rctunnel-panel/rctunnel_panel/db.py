@@ -50,6 +50,7 @@ _ADDED_COLUMNS = {
         "last_ping_ms": "INTEGER",
         "cert_days_left": "INTEGER",
         "cert_serial": "VARCHAR(64)",
+        "prev_cert_serial": "VARCHAR(64)",
         "token_used": "BOOLEAN NOT NULL DEFAULT 0",
     },
     "tunnels": {

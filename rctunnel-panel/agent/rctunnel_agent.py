@@ -356,6 +356,7 @@ class Agent:
         cfg = self._render_rctc(node, tunnels, msg.get("grant", ""))
         changed = (not self.rctc_json.exists()) or self.rctc_json.read_text() != cfg
         self.rctc_json.write_text(cfg)
+        self.rctc_json.chmod(0o600)   # holds the node token + grant — keep it root-only
         async with self._lock:
             if self.proc is None or self.proc.poll() is not None:
                 self._restart_engine()

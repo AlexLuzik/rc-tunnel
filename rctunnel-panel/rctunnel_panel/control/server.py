@@ -24,6 +24,8 @@ from .manager import ConnectionManager, get_manager, json_sender
 
 log = logging.getLogger("rctunnel_panel.control")
 
+RENEW_COOLDOWN_SECS = 60   # min seconds between honored cert-renewal requests per connection
+
 
 def build_ssl_context() -> ssl.SSLContext:
     """Server-side mTLS: present our server cert, require + verify client certs."""
@@ -105,14 +107,18 @@ async def _handle(websocket, manager: ConnectionManager) -> None:
         if agent is None:
             await websocket.close(code=4004, reason="unknown agent")
             return
-        # Reject a superseded/stolen cert: if we've pinned a serial for this agent,
-        # the presented cert must match it. Legacy agents (no pinned serial) pass
-        # until they next enroll. If we can't read the peer serial, don't lock out.
+        # Reject a superseded/stolen cert: if we've pinned a serial, the presented
+        # cert must match the current OR the previous serial (the latter still valid
+        # during a renewal handoff so a mid-renewal crash can't permanently lock the
+        # agent out). Legacy agents (no pin) pass; unreadable serial never locks out.
         if agent.cert_serial:
             peer = _peer_serial(ssl_object)
-            if peer is not None and str(peer) != agent.cert_serial:
+            ps = str(peer) if peer is not None else None
+            if ps is not None and ps != agent.cert_serial and ps != agent.prev_cert_serial:
                 await websocket.close(code=4003, reason="superseded certificate")
                 return
+            if ps == agent.cert_serial and agent.prev_cert_serial is not None:
+                _clear_prev_serial(agent_id)   # handoff confirmed; drop the old serial
         welcome = protocol.welcome_payload(agent, agent.node)
         welcome["artifacts"] = _target_manifest().get("sha256", {})   # trusted hashes for rctc verify
         aname, ateam = agent.name, agent.team_id
@@ -123,6 +129,8 @@ async def _handle(websocket, manager: ConnectionManager) -> None:
     from .. import logs
     logs.uptime(agent_id=agent_id, agent=aname, event="connect", team_id=ateam)
     ping_task = asyncio.create_task(_ping_loop(websocket, agent_id))
+    loop = asyncio.get_running_loop()
+    last_renew = 0.0
     try:
         await send(welcome)
         await manager.push(agent_id)  # initial desired state
@@ -131,24 +139,33 @@ async def _handle(websocket, manager: ConnectionManager) -> None:
                 msg = json.loads(raw)
             except json.JSONDecodeError:
                 continue
-            mtype = msg.get("type")
-            if mtype == protocol.HELLO:
-                _store_hello(agent_id, msg)
-                await _maybe_upgrade(send, msg)
-            elif mtype in (protocol.HEARTBEAT, protocol.APPLIED):
-                manager.touch(agent_id)
-                d = msg.get("cert_days_left")
-                if isinstance(d, int) and not isinstance(d, bool) and -36500 < d < 36500:
-                    _set_cert_days(agent_id, d)
-                ip = msg.get("detected_ip")
-                if isinstance(ip, str):
-                    _set_lan_ip(agent_id, ip)   # reflect a live LAN-IP change
-            elif mtype == protocol.RENEW:
-                renewed = _renew_cert(agent_id, msg.get("csr_pem", ""))
-                if renewed is not None:
-                    await send(renewed)
-            elif mtype == protocol.LOG:
-                log.info("agent %s: %s", agent_id, msg.get("msg"))
+            # One bad/unexpected message must never tear down the session.
+            try:
+                mtype = msg.get("type")
+                if mtype == protocol.HELLO:
+                    _store_hello(agent_id, msg)
+                    await _maybe_upgrade(send, msg)
+                elif mtype in (protocol.HEARTBEAT, protocol.APPLIED):
+                    manager.touch(agent_id)
+                    d = msg.get("cert_days_left")
+                    if isinstance(d, int) and not isinstance(d, bool) and -36500 < d < 36500:
+                        _set_cert_days(agent_id, d)
+                    ip = msg.get("detected_ip")
+                    if isinstance(ip, str):
+                        _set_lan_ip(agent_id, ip)   # reflect a live LAN-IP change
+                elif mtype == protocol.RENEW:
+                    if loop.time() - last_renew < RENEW_COOLDOWN_SECS:
+                        continue                    # rate-limit cert-signing spam
+                    last_renew = loop.time()
+                    renewed = _renew_cert(agent_id, msg.get("csr_pem", ""))
+                    if renewed is not None:
+                        await send(renewed)
+                elif mtype == protocol.LOG:
+                    log.info("agent %s: %s", agent_id, msg.get("msg"))
+            except websockets.ConnectionClosed:
+                raise
+            except Exception as e:  # noqa: BLE001
+                log.warning("agent %s: error handling %s: %s", agent_id, msg.get("type"), e)
     except websockets.ConnectionClosed:
         pass
     finally:
@@ -223,11 +240,22 @@ def _renew_cert(agent_id: int, csr_pem: str) -> dict | None:
         agent = db.get(Agent, agent_id)
         if agent is None:
             return None
+        # keep the current serial valid until the agent reconnects with the new one
+        if agent.cert_serial and agent.cert_serial != "revoked":
+            agent.prev_cert_serial = agent.cert_serial
         agent.cert_serial = serial
         db.commit()
     log.info("agent %s: renewed cert (serial %s)", agent_id, serial)
     return {"type": protocol.RENEWED, "agent_cert_pem": cert_pem.decode(),
             "ca_cert_pem": ca.cert_pem.decode()}
+
+
+def _clear_prev_serial(agent_id: int) -> None:
+    with SessionLocal() as db:
+        agent = db.get(Agent, agent_id)
+        if agent is not None and agent.prev_cert_serial is not None:
+            agent.prev_cert_serial = None
+            db.commit()
 
 
 def _set_lan_ip(agent_id: int, ip: str) -> None:

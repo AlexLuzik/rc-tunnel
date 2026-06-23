@@ -117,6 +117,7 @@ class Agent(Base):
     last_ping_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)   # control-plane RTT
     cert_days_left: Mapped[int | None] = mapped_column(Integer, nullable=True)  # mTLS cert lifetime (heartbeat)
     cert_serial: Mapped[str | None] = mapped_column(String(64), nullable=True)  # current issued cert serial (revokes superseded certs)
+    prev_cert_serial: Mapped[str | None] = mapped_column(String(64), nullable=True)  # still-accepted during a renewal handoff
     generation: Mapped[int] = mapped_column(Integer, default=0)      # bumped on config change
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 

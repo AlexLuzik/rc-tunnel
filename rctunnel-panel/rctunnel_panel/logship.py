@@ -48,23 +48,29 @@ def _build_hostmap() -> dict[str, dict]:
     return out
 
 
+def _cap(v, n: int):
+    return v[:n] if isinstance(v, str) else v
+
+
 def _to_doc(entry: dict, hostmap: dict) -> dict | None:
     req = entry.get("request") or {}
-    host = (req.get("host") or "").lower().split(":")[0]
+    host = (req.get("host") or "").lower().split(":")[0][:255]
     meta = hostmap.get(host, {})
     ts = entry.get("ts")
     iso = (datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).isoformat()
            if isinstance(ts, (int, float)) else logs.now_iso())
     dur = entry.get("duration") or 0
+    # host/method/src/target are attacker-controlled (Host header, request line,
+    # URI) — cap their length so a flood can't amplify OpenSearch storage/ingest.
     return {
         "ts": iso,
         "host": host,
         "agent": meta.get("agent"),
         "tunnel": meta.get("tunnel"),
         "team_id": meta.get("team_id"),
-        "method": req.get("method"),
-        "src": req.get("client_ip") or req.get("remote_ip"),
-        "target": req.get("uri"),
+        "method": _cap(req.get("method"), 16),
+        "src": _cap(req.get("client_ip") or req.get("remote_ip"), 64),
+        "target": _cap(req.get("uri"), 2048),
         "status": entry.get("status"),
         "latency_ms": round(float(dur) * 1000, 1),
         "bytes": entry.get("size") or 0,

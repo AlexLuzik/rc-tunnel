@@ -70,12 +70,17 @@ def test_enroll_lifecycle():
 
         # --- mTLS renewal (no token): server signs for the cert-derived identity,
         #     re-pins the serial. _renew_cert is what the control plane calls. ---
+        with SessionLocal() as db:
+            pre_renew_serial = db.get(Agent, a2id).cert_serial   # current cert before renewal
         renewed = _renew_cert(a2id, _csr())
         assert renewed and renewed["type"] == "renewed"
         rc = x509.load_pem_x509_certificate(renewed["agent_cert_pem"].encode())
         assert rc.subject.rfc4514_string() == f"CN=agent.{a2id}"
         with SessionLocal() as db:
-            assert db.get(Agent, a2id).cert_serial == str(rc.serial_number)
+            ag = db.get(Agent, a2id)
+            assert ag.cert_serial == str(rc.serial_number)
+            # the pre-renewal serial stays valid during the handoff (anti-lockout)
+            assert ag.prev_cert_serial == pre_renew_serial
         # a renewal CSR for nothing / bad input is refused
         assert _renew_cert(a2id, "") is None
         assert _renew_cert(a2id, "not a csr") is None

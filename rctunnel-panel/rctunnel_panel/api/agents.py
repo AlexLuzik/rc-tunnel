@@ -113,6 +113,7 @@ def reissue_token(agent_id: int, db: Session = Depends(get_db),
     # cert, so the existing (possibly stolen) cert is rejected on its next connect.
     # The reinstall re-enrolls and pins a fresh real serial.
     agent.cert_serial = "revoked"
+    agent.prev_cert_serial = None
     db.commit()
     db.refresh(agent)
     return AgentCreated(
@@ -165,8 +166,8 @@ def enroll(body: EnrollRequest, request: Request, db: Session = Depends(get_db),
     serial = str(x509.load_pem_x509_certificate(cert_pem).serial_number)
     burned = db.execute(
         update(Agent).where(Agent.id == agent.id, Agent.token_used.is_(False))
-        .values(token_used=True, cert_serial=serial, os=body.os, arch=body.arch,
-                last_seen=datetime.now(timezone.utc)))
+        .values(token_used=True, cert_serial=serial, prev_cert_serial=None,
+                os=body.os, arch=body.arch, last_seen=datetime.now(timezone.utc)))
     db.commit()
     if burned.rowcount != 1:
         ratelimit.record_fail(ip)
