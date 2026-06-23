@@ -60,8 +60,8 @@ class Settings(BaseSettings):
     # --- distribution (/dl) ---
     download_dir: str = "/var/www/rctunnel-panel-dl"
 
-    # --- public showcase ---
-    seed_demo: bool = False                          # seed the read-only demo team/user/agent (public site only)
+    # --- public showcase / demo deployment ---
+    demo_mode: bool = False                          # landing page on /, seed read-only demo team/user/agent
 
     @property
     def agent_ws_url(self) -> str:

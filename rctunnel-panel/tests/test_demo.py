@@ -7,7 +7,7 @@ os.environ["RCTUNNEL_DATABASE_URL"] = f"sqlite:///{tempfile.mktemp(suffix='.db')
 os.environ["RCTUNNEL_PKI_DIR"] = tempfile.mkdtemp()
 os.environ["RCTUNNEL_JWT_SECRET"] = "L" * 40
 os.environ["RCTUNNEL_COOKIE_SECURE"] = "false"
-os.environ["RCTUNNEL_SEED_DEMO"] = "true"  # this suite exercises the public demo seed
+os.environ["RCTUNNEL_DEMO_MODE"] = "true"  # this suite exercises the public demo seed
 
 from fastapi.testclient import TestClient  # noqa: E402
 

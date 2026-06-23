@@ -79,6 +79,8 @@ ask CONTROL_PORT  "agent control-plane port (public, mTLS)" "8001"
 ask RCTD_CTRL_PORT "rctd control port (public)" "7000"
 ask OS_HEAP       "OpenSearch JVM heap (needs ~2x this in free RAM)" "512m"
 OPEN_FW=n; yesno "Open firewall ports (80,443,${RCTD_CTRL_PORT},${WORKCONN_PORT},${CONTROL_PORT})?" y && OPEN_FW=y
+# Demo deployment: public landing page on / + a seeded read-only demo account.
+DEMO_MODE=n; yesno "Demo deployment? (public landing on / + read-only demo account)" n && DEMO_MODE=y
 # Offer to reset the DB only when one already exists; default no (keep data).
 WIPE_DB=n
 if command -v docker >/dev/null 2>&1 && docker volume ls --format '{{.Name}}' 2>/dev/null | grep -q '_pgdata$'; then
@@ -94,7 +96,7 @@ echo "${c_b}  Summary:${c_reset}"
 echo "    domain=$DOMAIN  acme=$ACME_EMAIL  admin=$ADMIN_EMAIL"
 echo "    panel=$PANEL_SRC"
 echo "    engine=$ENGINE_SRC  (build rctd/rctc for $ARCH from source)"
-echo "    ports: 80,443 + rctd $RCTD_CTRL_PORT/$WORKCONN_PORT + control $CONTROL_PORT ; firewall=$OPEN_FW ; reset-db=$WIPE_DB"
+echo "    ports: 80,443 + rctd $RCTD_CTRL_PORT/$WORKCONN_PORT + control $CONTROL_PORT ; firewall=$OPEN_FW ; reset-db=$WIPE_DB ; demo=$DEMO_MODE"
 yesno "Proceed with installation?" y || die "aborted by user."
 
 # ---- install prerequisites --------------------------------------------------
@@ -255,6 +257,7 @@ RCTUNNEL_RCTD_WORKCONN_PORT=${WORKCONN_PORT}
 RCTUNNEL_RCTD_CONTROL_PORT=${RCTD_CTRL_PORT}
 RCTUNNEL_NODE_PUBLIC_ADDR=${DOMAIN}
 RCTUNNEL_NODE_TOKEN=${NODE_TOKEN}
+RCTUNNEL_DEMO_MODE=$([ "$DEMO_MODE" = y ] && echo true || echo false)
 EOF
 chmod 600 /etc/rctunnel-panel/master.env
 

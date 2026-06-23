@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RC-Tunnel — self-hosted reverse tunnels</title>
+<script>(function(){try{var s=localStorage.getItem('rc-theme');var dark=s?s==='dark':matchMedia('(prefers-color-scheme: dark)').matches;document.documentElement.setAttribute('data-bs-theme',dark?'dark':'light');}catch(e){}})();</script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.7.0/dist/tabler-icons.min.css" rel="stylesheet">
+<style>
+:root,[data-bs-theme="light"]{
+  --bs-primary:#10b981; --bs-primary-rgb:16,185,129;
+  --rc-green-50:#ecfdf5; --rc-green-100:#d1fae5; --rc-green-200:#a7f3d0; --rc-green-300:#6ee7b7;
+  --rc-green-400:#34d399; --rc-green-500:#10b981; --rc-green-600:#059669; --rc-green-700:#047857;
+  --rc-green-800:#065f46; --rc-green-900:#064e3b;
+  --bs-body-bg:#f6faf8; --bs-body-color:#0f2e22; --bs-border-color:#e3ece8; --bs-link-color:#047857;
+  --bs-border-radius:.75rem; --bs-border-radius-lg:1rem; --bs-border-radius-sm:.5rem;
+  --bs-success:#10b981; --bs-success-rgb:16,185,129; --bs-info:#0ea5a4; --bs-warning:#f59e0b; --bs-danger:#ef4444;
+  --rc-card-bg:#ffffff; --rc-input-bg:#ffffff; --rc-surface-2:#eef5f1;
+  --bs-secondary-color:#5b7a6e;
+}
+[data-bs-theme="dark"]{
+  --bs-body-bg:#0c1512; --bs-body-color:#dcefe7; --bs-border-color:#1d2c26;
+  --bs-primary:#34d399; --bs-primary-rgb:52,211,153; --bs-link-color:#6ee7b7;
+  --bs-success:#34d399; --bs-success-rgb:52,211,153;
+  --rc-card-bg:#111f1a; --rc-input-bg:#16261f; --rc-surface-2:#0f1c17;
+  --bs-secondary-color:#8aa79b;
+}
+body{font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;margin:0;}
+.rc-card{border:1px solid var(--bs-border-color);border-radius:1rem;background:var(--rc-card-bg);
+  box-shadow:0 1px 2px rgba(6,95,70,.06),0 8px 24px rgba(6,95,70,.05);transition:transform .22s cubic-bezier(.4,0,.2,1),box-shadow .22s cubic-bezier(.4,0,.2,1);}
+.rc-card.rc-lift:hover{transform:translateY(-3px);box-shadow:0 6px 14px rgba(6,95,70,.10),0 18px 44px rgba(6,95,70,.13);}
+.btn{transition:transform .12s cubic-bezier(.4,0,.2,1),box-shadow .12s,background-color .15s,color .15s,border-color .15s;font-weight:600;}
+.btn-success:hover,.btn-primary:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(6,95,70,.22);}
+.btn-success{--bs-btn-bg:#10b981;--bs-btn-border-color:#10b981;--bs-btn-hover-bg:#059669;--bs-btn-hover-border-color:#059669;--bs-btn-active-bg:#047857;--bs-btn-color:#fff;--bs-btn-hover-color:#fff;}
+a{text-decoration:none;}
+*:focus-visible{outline:2px solid var(--rc-green-500);outline-offset:2px;}
+@keyframes rc-pulse{0%{transform:scale(1);opacity:.55}70%,100%{transform:scale(2.6);opacity:0}}
+@keyframes rc-enter{from{transform:translateY(10px);opacity:0}to{transform:translateY(0);opacity:1}}
+.rc-enter{animation:rc-enter .5s cubic-bezier(.4,0,.2,1) both;}
+@media (prefers-reduced-motion: reduce){*{animation-duration:.001ms!important;transition-duration:.001ms!important;}.rc-card:hover{transform:none!important;}}
+@media (max-width:860px){.rc-hero-grid{grid-template-columns:1fr!important;gap:36px!important;}.rc-foot-grid{grid-template-columns:1fr 1fr!important;}}
+@media (max-width:520px){.rc-foot-grid{grid-template-columns:1fr!important;}}
+</style>
+</head>
+<body>
+<div style="min-height:100vh;background:var(--bs-body-bg);color:var(--bs-body-color);overflow-x:hidden;">
+
+  <!-- ===================== NAV ===================== -->
+  <nav style="position:sticky;top:0;z-index:1030;backdrop-filter:saturate(180%) blur(10px);background:color-mix(in srgb,var(--rc-card-bg) 82%,transparent);border-bottom:1px solid var(--bs-border-color);">
+    <div style="max-width:1140px;margin:0 auto;padding:0 24px;height:64px;display:flex;align-items:center;gap:22px;">
+      <a href="#top" style="display:flex;align-items:center;gap:9px;">
+        <span style="display:inline-flex;width:32px;height:32px;border-radius:10px;background:linear-gradient(135deg,#34d399,#059669);align-items:center;justify-content:center;box-shadow:0 4px 10px rgba(5,150,105,.35);">
+          <i class="ti ti-arrow-ramp-right-2" style="color:#fff;font-size:19px;"></i>
+        </span>
+        <span style="font-weight:700;font-size:20px;letter-spacing:-.02em;color:var(--bs-body-color);">RC-Tunnel</span>
+      </a>
+      <div style="flex:1;"></div>
+      <div style="display:none;align-items:center;gap:2px;" class="d-md-flex">
+        <a href="#features" style="padding:7px 13px;border-radius:8px;font-weight:500;font-size:.95rem;color:var(--bs-secondary-color);">Features</a>
+        <a href="#how" style="padding:7px 13px;border-radius:8px;font-weight:500;font-size:.95rem;color:var(--bs-secondary-color);">How it works</a>
+        <a href="#protocols" style="padding:7px 13px;border-radius:8px;font-weight:500;font-size:.95rem;color:var(--bs-secondary-color);">Protocols</a>
+        <a href="#pricing" style="padding:7px 13px;border-radius:8px;font-weight:500;font-size:.95rem;color:var(--bs-secondary-color);">Pricing</a>
+      </div>
+      <span style="width:1px;height:22px;background:var(--bs-border-color);"></span>
+      <a href="/login" style="display:none;padding:7px 13px;border-radius:8px;font-weight:500;font-size:.95rem;color:var(--bs-body-color);" class="d-md-inline-block">Sign in</a>
+      <a href="/demo" class="btn btn-success btn-sm rounded-pill px-3">Try the demo</a>
+      <button type="button" onclick="rcToggleTheme()" aria-label="Toggle dark theme" title="Toggle theme" style="width:36px;height:36px;border-radius:999px;border:1px solid var(--bs-border-color);background:transparent;color:var(--bs-body-color);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex:none;">
+        <i id="rcThemeIcon" class="ti ti-moon" style="font-size:18px;"></i>
+      </button>
+    </div>
+  </nav>
+
+  <!-- ===================== HERO ===================== -->
+  <header id="top" style="position:relative;background:radial-gradient(1200px 620px at 50% -120px,var(--rc-green-100),transparent 62%),var(--bs-body-bg);">
+    <div style="max-width:1140px;margin:0 auto;padding:64px 24px 40px;display:grid;grid-template-columns:1.05fr .95fr;gap:48px;align-items:center;" class="rc-hero-grid">
+
+      <div class="rc-enter">
+        <span style="display:inline-flex;align-items:center;gap:7px;font-size:.78rem;font-weight:600;letter-spacing:.02em;background:var(--rc-card-bg);border:1px solid var(--bs-border-color);color:var(--rc-green-700);padding:5px 12px 5px 9px;border-radius:999px;margin-bottom:22px;box-shadow:0 1px 2px rgba(6,95,70,.05);">
+          <span style="display:inline-flex;align-items:center;gap:5px;background:var(--rc-green-50);padding:1px 8px;border-radius:999px;"><i class="ti ti-brand-github" style="font-size:13px;"></i>Open source</span>
+          Self-hostable reverse tunnels
+        </span>
+        <h1 style="font-size:3.4rem;line-height:1.04;font-weight:800;letter-spacing:-.03em;margin:0 0 18px;text-wrap:balance;">
+          Expose anything.<br><span style="background:linear-gradient(120deg,#34d399,#059669);-webkit-background-clip:text;background-clip:text;color:transparent;">Own everything.</span>
+        </h1>
+        <p style="font-size:1.18rem;line-height:1.6;color:var(--bs-secondary-color);margin:0 0 28px;max-width:520px;">
+          RC-Tunnel is a self-hosted control panel for reverse tunnels. Bring any local service online with HTTPS, custom subdomains and a full audit trail — running entirely on your own infrastructure.
+        </p>
+
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:26px;">
+          <a href="/demo" class="btn btn-success rounded-pill px-4 py-2" style="font-size:1rem;">Try the demo<i class="ti ti-arrow-right" style="font-size:17px;margin-left:7px;"></i></a>
+          <a href="https://github.com/AlexLuzik/rc-tunnel" target="_blank" rel="noopener" class="btn btn-outline-secondary rounded-pill px-4 py-2" style="font-size:1rem;border-color:var(--bs-border-color);color:var(--bs-body-color);"><i class="ti ti-brand-github" style="font-size:17px;margin-right:7px;"></i>Star on GitHub</a>
+        </div>
+
+        <div style="display:flex;align-items:stretch;gap:8px;max-width:520px;">
+          <div style="flex:1;display:flex;align-items:center;gap:9px;font-family:'JetBrains Mono',monospace;font-size:.82rem;background:var(--rc-card-bg);border:1px solid var(--bs-border-color);border-radius:11px;padding:11px 14px;overflow-x:auto;white-space:nowrap;box-shadow:0 1px 2px rgba(6,95,70,.05);">
+            <span style="color:var(--rc-green-600);flex:none;">$</span><span id="rcInstall" style="color:var(--bs-body-color);">sudo bash rctunnel-panel/deploy/install-server.sh</span>
+          </div>
+          <button type="button" onclick="rcCopyInstall()" class="btn btn-outline-secondary rounded-pill" style="white-space:nowrap;border-color:var(--bs-border-color);color:var(--bs-body-color);flex:none;padding:0 16px;"><i id="rcCopyIcon" class="ti ti-copy" style="font-size:15px;"></i></button>
+        </div>
+      </div>
+
+      <!-- HERO PREVIEW MOCK -->
+      <div class="rc-enter" style="animation-delay:.08s;">
+        <div class="rc-card" style="padding:0;overflow:hidden;box-shadow:0 12px 28px rgba(6,95,70,.10),0 40px 80px rgba(6,95,70,.14);">
+          <div style="display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--bs-border-color);background:var(--rc-surface-2);">
+            <span style="width:11px;height:11px;border-radius:50%;background:#ef4444;opacity:.55;"></span>
+            <span style="width:11px;height:11px;border-radius:50%;background:#f59e0b;opacity:.55;"></span>
+            <span style="width:11px;height:11px;border-radius:50%;background:var(--rc-green-500);opacity:.7;"></span>
+            <span style="margin-left:8px;font-family:'JetBrains Mono',monospace;font-size:.74rem;color:var(--bs-secondary-color);">{{ domain }}/dashboard</span>
+          </div>
+          <div style="padding:18px 18px 20px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+              <span style="font-weight:700;font-size:1.02rem;letter-spacing:-.01em;">Agents</span>
+              <span style="font-size:.72rem;color:var(--bs-secondary-color);background:var(--rc-green-50);padding:3px 10px;border-radius:999px;">3 online · 4 total</span>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:7px;">
+              {% for r in [
+                {'name':'edge-proxy-01','os':'linux/amd64','ping':'42 ms','pbg':'rgba(16,185,129,.14)','pc':'var(--rc-green-700)','online':true},
+                {'name':'office-nas','os':'linux/arm64','ping':'180 ms','pbg':'rgba(245,158,11,.16)','pc':'#b45309','online':true},
+                {'name':'build-runner','os':'windows/amd64','ping':'320 ms','pbg':'rgba(239,68,68,.14)','pc':'#b91c1c','online':true},
+                {'name':'home-pi','os':'linux/arm','ping':'—','pbg':'var(--bs-border-color)','pc':'var(--bs-secondary-color)','online':false}
+              ] %}
+              <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--bs-border-color);border-radius:11px;background:var(--rc-input-bg);">
+                <span style="font-weight:600;font-size:.86rem;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ r.name }}</span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:.72rem;color:var(--bs-secondary-color);">{{ r.os }}</span>
+                <span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:.72rem;font-weight:600;background:{{ r.pbg }};color:{{ r.pc }};">{{ r.ping }}</span>
+                <span style="display:inline-flex;align-items:center;gap:7px;font-size:.78rem;font-weight:500;width:64px;justify-content:flex-end;">
+                  {% if r.online %}
+                    <span style="position:relative;display:inline-flex;width:8px;height:8px;"><span style="position:absolute;inset:0;border-radius:50%;background:var(--rc-green-500);animation:rc-pulse 2s ease-in-out infinite;"></span><span style="position:relative;width:8px;height:8px;border-radius:50%;background:var(--rc-green-500);"></span></span>online
+                  {% else %}
+                    <span style="width:8px;height:8px;border-radius:50%;border:2px solid #94a3b8;"></span><span style="color:var(--bs-secondary-color);">offline</span>
+                  {% endif %}
+                </span>
+              </div>
+              {% endfor %}
+            </div>
+            <div style="display:flex;align-items:center;gap:7px;margin-top:13px;padding-top:13px;border-top:1px dashed var(--bs-border-color);font-size:.76rem;color:var(--bs-secondary-color);">
+              <i class="ti ti-shield-check" style="color:var(--rc-green-600);font-size:15px;"></i>Every action recorded · live fleet uptime
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- trust strip -->
+    <div style="max-width:1140px;margin:0 auto;padding:8px 24px 56px;">
+      <div style="display:flex;flex-wrap:wrap;gap:14px 40px;align-items:center;justify-content:center;color:var(--bs-secondary-color);font-size:.9rem;font-weight:500;">
+        <span style="display:inline-flex;align-items:center;gap:8px;"><i class="ti ti-server-2" style="color:var(--rc-green-600);font-size:18px;"></i>Runs on your infra</span>
+        <span style="display:inline-flex;align-items:center;gap:8px;"><i class="ti ti-plug-connected" style="color:var(--rc-green-600);font-size:18px;"></i>HTTP/S, TCP &amp; UDP</span>
+        <span style="display:inline-flex;align-items:center;gap:8px;"><i class="ti ti-shield-lock" style="color:var(--rc-green-600);font-size:18px;"></i>mTLS + full audit log</span>
+        <span style="display:inline-flex;align-items:center;gap:8px;"><i class="ti ti-lock" style="color:var(--rc-green-600);font-size:18px;"></i>No inbound ports</span>
+        <span style="display:inline-flex;align-items:center;gap:8px;"><i class="ti ti-refresh" style="color:var(--rc-green-600);font-size:18px;"></i>OTA agent updates</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===================== FEATURES ===================== -->
+  <section id="features" style="max-width:1140px;margin:0 auto;padding:72px 24px;">
+    <div style="text-align:center;max-width:640px;margin:0 auto 44px;">
+      <span style="font-size:.8rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--rc-green-600);">Everything in one panel</span>
+      <h2 style="font-size:2.3rem;font-weight:800;letter-spacing:-.02em;margin:10px 0 12px;text-wrap:balance;">A control plane for your whole fleet</h2>
+      <p style="font-size:1.08rem;color:var(--bs-secondary-color);margin:0;line-height:1.6;">From a single SSH tunnel to hundreds of devices across teams — manage protocols, subdomains, quotas and audit from one place.</p>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:20px;">
+      {% for f in [
+        {'icon':'ti-plug-connected','title':'Any protocol','desc':'HTTP, HTTPS, TCP and UDP — expose web apps, SSH, databases and game servers from a single agent.','ib':'rgba(16,185,129,.14)','ic':'var(--rc-green-700)'},
+        {'icon':'ti-world-www','title':'Custom subdomains','desc':'Map any service to a clean subdomain, up to several levels deep, with automatic HTTPS on every node.','ib':'rgba(14,165,164,.16)','ic':'#0f766e'},
+        {'icon':'ti-activity-heartbeat','title':'Live logs & uptime','desc':'Watch every request and connection in real time, with availability history and uptime tracking per device.','ib':'rgba(16,185,129,.14)','ic':'var(--rc-green-700)'},
+        {'icon':'ti-users-group','title':'Teams & quotas','desc':'Group devices into teams, set bandwidth quotas, and suspend or scale them without touching a config file.','ib':'rgba(14,165,164,.16)','ic':'#0f766e'},
+        {'icon':'ti-shield-lock','title':'Full audit trail','desc':'Every create, update, delete and login is recorded with actor, target and source IP — exportable on demand.','ib':'rgba(245,158,11,.16)','ic':'#b45309'},
+        {'icon':'ti-terminal-2','title':'One-line install','desc':'Drop a single curl command on any box and it self-registers. OTA keeps the whole fleet on the latest agent.','ib':'rgba(16,185,129,.14)','ic':'var(--rc-green-700)'}
+      ] %}
+      <div class="rc-card rc-lift" style="padding:26px;">
+        <span style="display:inline-flex;width:46px;height:46px;border-radius:13px;align-items:center;justify-content:center;background:{{ f.ib }};color:{{ f.ic }};margin-bottom:16px;"><i class="ti {{ f.icon }}" style="font-size:23px;"></i></span>
+        <h3 style="font-size:1.18rem;font-weight:700;letter-spacing:-.01em;margin:0 0 8px;">{{ f.title }}</h3>
+        <p style="font-size:.96rem;color:var(--bs-secondary-color);line-height:1.6;margin:0;">{{ f.desc }}</p>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <!-- ===================== HOW IT WORKS ===================== -->
+  <section id="how" style="background:var(--rc-surface-2);border-top:1px solid var(--bs-border-color);border-bottom:1px solid var(--bs-border-color);">
+    <div style="max-width:1140px;margin:0 auto;padding:72px 24px;">
+      <div style="text-align:center;max-width:620px;margin:0 auto 48px;">
+        <span style="font-size:.8rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--rc-green-600);">From zero to live</span>
+        <h2 style="font-size:2.3rem;font-weight:800;letter-spacing:-.02em;margin:10px 0 12px;text-wrap:balance;">Three steps to your first tunnel</h2>
+        <p style="font-size:1.08rem;color:var(--bs-secondary-color);margin:0;line-height:1.6;">No inbound firewall rules, no static IPs. Agents dial out over one secure connection.</p>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px;">
+        {% for s in [
+          {'num':'1','title':'Deploy the panel','desc':'Run the installer on your own server and point a wildcard DNS record at it. That is your ingress.','code':'sudo bash deploy/install-server.sh'},
+          {'num':'2','title':'Install the agent','desc':'Paste the one-line install on any machine you want to reach. It dials out — no inbound ports.','code':'curl -fsSL ' ~ domain ~ '/dl/install.sh | bash'},
+          {'num':'3','title':'Open a tunnel','desc':'Pick a protocol, a local address and a subdomain. Your service is live with HTTPS in seconds.','code':'http → 127.0.0.1:8080'}
+        ] %}
+        <div class="rc-card" style="padding:26px;position:relative;">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
+            <span style="display:inline-flex;width:38px;height:38px;border-radius:11px;align-items:center;justify-content:center;background:linear-gradient(135deg,#34d399,#059669);color:#fff;font-weight:700;font-size:1.05rem;box-shadow:0 4px 10px rgba(5,150,105,.3);">{{ s.num }}</span>
+            <h3 style="font-size:1.14rem;font-weight:700;letter-spacing:-.01em;margin:0;">{{ s.title }}</h3>
+          </div>
+          <p style="font-size:.96rem;color:var(--bs-secondary-color);line-height:1.6;margin:0 0 14px;">{{ s.desc }}</p>
+          <code style="display:block;font-family:'JetBrains Mono',monospace;font-size:.78rem;background:var(--rc-input-bg);border:1px solid var(--bs-border-color);border-radius:9px;padding:9px 11px;color:var(--rc-green-700);overflow-x:auto;white-space:nowrap;">{{ s.code }}</code>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== PROTOCOLS ===================== -->
+  <section id="protocols" style="max-width:1140px;margin:0 auto;padding:72px 24px;">
+    <div style="display:grid;grid-template-columns:.9fr 1.1fr;gap:48px;align-items:center;" class="rc-hero-grid">
+      <div>
+        <span style="font-size:.8rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--rc-green-600);">Any service, any protocol</span>
+        <h2 style="font-size:2.3rem;font-weight:800;letter-spacing:-.02em;margin:10px 0 14px;text-wrap:balance;">Four tunnel types out of the box</h2>
+        <p style="font-size:1.08rem;color:var(--bs-secondary-color);line-height:1.6;margin:0 0 22px;">Web apps over HTTP/HTTPS with custom subdomains and automatic TLS. SSH, databases and game servers over raw TCP and UDP — all from a single agent.</p>
+        <a href="/demo" class="btn btn-success rounded-pill px-4 py-2">Open a tunnel<i class="ti ti-arrow-right" style="font-size:16px;margin-left:7px;"></i></a>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;">
+        {% for p in [
+          {'name':'http','desc':'Web apps with subdomains','bg':'rgba(16,185,129,.15)','color':'var(--rc-green-700)'},
+          {'name':'https','desc':'Auto-TLS on every node','bg':'rgba(16,185,129,.15)','color':'var(--rc-green-700)'},
+          {'name':'tcp','desc':'SSH, databases, raw ports','bg':'rgba(100,116,139,.18)','color':'#475569'},
+          {'name':'udp','desc':'DNS, game &amp; realtime','bg':'rgba(100,116,139,.18)','color':'#475569'}
+        ] %}
+        <div class="rc-card rc-lift" style="padding:16px 18px;">
+          <span style="display:inline-block;font-family:'JetBrains Mono',monospace;font-weight:600;font-size:.82rem;padding:2px 10px;border-radius:999px;background:{{ p.bg }};color:{{ p.color }};margin-bottom:9px;">{{ p.name }}</span>
+          <div style="font-size:.86rem;color:var(--bs-secondary-color);line-height:1.45;">{{ p.desc }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== AUDIT BAND ===================== -->
+  <section style="background:linear-gradient(135deg,#064e3b,#065f46 55%,#047857);color:#eafff6;">
+    <div style="max-width:1140px;margin:0 auto;padding:64px 24px;display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:center;" class="rc-hero-grid">
+      <div>
+        <span style="display:inline-flex;align-items:center;gap:7px;font-size:.72rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:rgba(255,255,255,.14);color:#fff;padding:4px 11px;border-radius:999px;margin-bottom:16px;"><i class="ti ti-crown" style="font-size:13px;"></i>Super admin</span>
+        <h2 style="font-size:2.2rem;font-weight:800;letter-spacing:-.02em;margin:0 0 14px;color:#fff;text-wrap:balance;">Know exactly who did what, and when</h2>
+        <p style="font-size:1.06rem;line-height:1.6;color:rgba(234,255,246,.82);margin:0 0 22px;">Every create, update, delete and login is recorded with the actor, target and source IP. Drill into a per-device audit trail across the entire fleet — and export it whenever compliance asks.</p>
+        <div style="display:flex;gap:32px;flex-wrap:wrap;">
+          <div><div style="font-size:2rem;font-weight:800;letter-spacing:-.02em;color:#fff;">100%</div><div style="font-size:.86rem;color:rgba(234,255,246,.7);">actions logged</div></div>
+          <div><div style="font-size:2rem;font-weight:800;letter-spacing:-.02em;color:#fff;">mTLS</div><div style="font-size:.86rem;color:rgba(234,255,246,.7);">end to end</div></div>
+          <div><div style="font-size:2rem;font-weight:800;letter-spacing:-.02em;color:#fff;">CSV</div><div style="font-size:.86rem;color:rgba(234,255,246,.7);">one-click export</div></div>
+        </div>
+      </div>
+      <div style="background:rgba(7,30,22,.5);border:1px solid rgba(255,255,255,.12);border-radius:16px;padding:8px;box-shadow:0 20px 50px rgba(0,0,0,.3);">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:.8rem;display:flex;flex-direction:column;">
+          {% for a in [
+            {'time':'14:32','label':'tunnel.delete','target':'db @ edge-proxy-01','bg':'rgba(252,165,165,.2)','color':'#fecaca','icon':'ti-trash'},
+            {'time':'14:18','label':'quota.update','target':'Team Globex → 150 GB','bg':'rgba(94,234,212,.2)','color':'#99f6e4','icon':'ti-pencil'},
+            {'time':'13:50','label':'tunnel.create','target':'web @ office-nas','bg':'rgba(52,211,153,.22)','color':'#a7f3d0','icon':'ti-plus'},
+            {'time':'13:12','label':'agent.connect','target':'build-runner','bg':'rgba(196,181,253,.22)','color':'#ddd6fe','icon':'ti-shield-lock'},
+            {'time':'11:59','label':'user.create','target':'dan@acme.com (member)','bg':'rgba(52,211,153,.22)','color':'#a7f3d0','icon':'ti-plus'}
+          ] %}
+          <div style="display:flex;align-items:center;gap:11px;padding:11px 13px;border-bottom:1px solid rgba(255,255,255,.07);">
+            <span style="color:rgba(234,255,246,.5);flex:none;">{{ a.time }}</span>
+            <span style="display:inline-flex;align-items:center;gap:5px;padding:1px 8px;border-radius:999px;font-size:.72rem;font-weight:600;background:{{ a.bg }};color:{{ a.color }};flex:none;"><i class="ti {{ a.icon }}" style="font-size:11px;"></i>{{ a.label }}</span>
+            <span style="color:#eafff6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ a.target }}</span>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== PRICING ===================== -->
+  <section id="pricing" style="max-width:1140px;margin:0 auto;padding:72px 24px;">
+    <div style="text-align:center;max-width:620px;margin:0 auto 44px;">
+      <span style="font-size:.8rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--rc-green-600);">Pricing</span>
+      <h2 style="font-size:2.3rem;font-weight:800;letter-spacing:-.02em;margin:10px 0 12px;text-wrap:balance;">Free and open source, forever</h2>
+      <p style="font-size:1.08rem;color:var(--bs-secondary-color);margin:0;line-height:1.6;">The whole control plane is yours to run. No seats, no metering, no vendor lock-in.</p>
+    </div>
+    <div style="max-width:420px;margin:0 auto;">
+      <div class="rc-card rc-lift" style="padding:32px;position:relative;border-color:var(--rc-green-400);box-shadow:0 8px 22px rgba(6,95,70,.12),0 24px 60px rgba(6,95,70,.14);">
+        <h3 style="font-size:1.2rem;font-weight:700;margin:0 0 4px;">Self-hosted</h3>
+        <p style="font-size:.92rem;color:var(--bs-secondary-color);margin:0 0 18px;">Run it on your own infrastructure.</p>
+        <div style="display:flex;align-items:baseline;gap:6px;margin-bottom:20px;"><span style="font-size:2.6rem;font-weight:800;letter-spacing:-.02em;">$0</span><span style="color:var(--bs-secondary-color);font-size:.95rem;">/ MIT licensed</span></div>
+        <a href="https://github.com/AlexLuzik/rc-tunnel" target="_blank" rel="noopener" class="btn btn-success rounded-pill w-100 py-2 mb-4">Get started on GitHub</a>
+        <div style="display:flex;flex-direction:column;gap:11px;">
+          {% for i in [
+            'Unlimited agents & tunnels',
+            'HTTP/HTTPS, TCP &amp; UDP',
+            'Teams, quotas & full audit log',
+            'Live request & connection logs',
+            'OTA fleet updates, full source under MIT'
+          ] %}
+          <div style="display:flex;align-items:flex-start;gap:10px;font-size:.94rem;"><i class="ti ti-check" style="color:var(--rc-green-600);font-size:17px;margin-top:1px;flex:none;"></i><span>{{ i }}</span></div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== FAQ ===================== -->
+  <section style="background:var(--rc-surface-2);border-top:1px solid var(--bs-border-color);">
+    <div style="max-width:760px;margin:0 auto;padding:72px 24px;">
+      <h2 style="font-size:2.1rem;font-weight:800;letter-spacing:-.02em;margin:0 0 32px;text-align:center;">Questions, answered</h2>
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        {% for q in [
+          {'q':'Do I have to open inbound ports?','a':'No. Agents dial out to your node over a single secure connection, so nothing needs to be exposed on the machine you are tunneling from — it works behind NAT and strict firewalls.'},
+          {'q':'Can I self-host the whole thing?','a':'Yes. The control panel, node and agents are all open source. Run them on your own infrastructure and your traffic never touches anyone else’s servers.'},
+          {'q':'Which protocols are supported?','a':'HTTP, HTTPS, TCP and UDP. That covers web apps with custom subdomains, SSH, databases, DNS and game servers — all from one agent.'},
+          {'q':'Is there an audit log?','a':'Every create, update, delete and login is recorded with the actor, target and source IP. Admins get a per-device audit trail across the whole fleet, exportable to CSV.'}
+        ] %}
+        <div class="rc-card" style="padding:0;overflow:hidden;">
+          <button type="button" onclick="rcToggleFaq(this)" style="width:100%;display:flex;align-items:center;gap:14px;text-align:left;background:transparent;border:0;padding:18px 22px;cursor:pointer;color:var(--bs-body-color);font-weight:600;font-size:1.04rem;">
+            <span style="flex:1;">{{ q.q }}</span>
+            <i class="ti ti-chevron-down rc-faq-chevron" style="font-size:19px;color:var(--bs-secondary-color);transition:transform .22s;flex:none;"></i>
+          </button>
+          <div class="rc-faq-body" style="display:none;padding:0 22px 20px;color:var(--bs-secondary-color);font-size:.98rem;line-height:1.62;">{{ q.a }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== CTA ===================== -->
+  <section style="max-width:1140px;margin:0 auto;padding:80px 24px;">
+    <div class="rc-card" style="padding:56px 40px;text-align:center;background:radial-gradient(700px 360px at 50% -40px,var(--rc-green-100),var(--rc-card-bg) 70%);">
+      <span style="display:inline-flex;width:54px;height:54px;border-radius:16px;background:linear-gradient(135deg,#34d399,#059669);align-items:center;justify-content:center;box-shadow:0 8px 20px rgba(5,150,105,.4);margin-bottom:18px;"><i class="ti ti-arrow-ramp-right-2" style="color:#fff;font-size:30px;"></i></span>
+      <h2 style="font-size:2.4rem;font-weight:800;letter-spacing:-.02em;margin:0 0 12px;text-wrap:balance;">Bring your first service online today</h2>
+      <p style="font-size:1.12rem;color:var(--bs-secondary-color);max-width:520px;margin:0 auto 26px;line-height:1.6;">One agent, one command, full control. Spin up RC-Tunnel and open a tunnel in under five minutes.</p>
+      <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
+        <a href="/demo" class="btn btn-success rounded-pill px-4 py-2" style="font-size:1.02rem;">Try the demo<i class="ti ti-arrow-right" style="font-size:17px;margin-left:7px;"></i></a>
+        <a href="https://github.com/AlexLuzik/rc-tunnel" target="_blank" rel="noopener" class="btn btn-outline-secondary rounded-pill px-4 py-2" style="font-size:1.02rem;border-color:var(--bs-border-color);color:var(--bs-body-color);">Read the docs</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== FOOTER ===================== -->
+  <footer style="border-top:1px solid var(--bs-border-color);background:var(--rc-card-bg);">
+    <div style="max-width:1140px;margin:0 auto;padding:48px 24px 36px;display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:32px;" class="rc-foot-grid">
+      <div>
+        <a href="#top" style="display:flex;align-items:center;gap:9px;margin-bottom:12px;">
+          <span style="display:inline-flex;width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#34d399,#059669);align-items:center;justify-content:center;"><i class="ti ti-arrow-ramp-right-2" style="color:#fff;font-size:17px;"></i></span>
+          <span style="font-weight:700;font-size:18px;letter-spacing:-.02em;">RC-Tunnel</span>
+        </a>
+        <p style="font-size:.9rem;color:var(--bs-secondary-color);line-height:1.55;margin:0;max-width:260px;">Self-hosted reverse tunnels with a control panel your whole team can use.</p>
+      </div>
+      <div>
+        <div style="font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--bs-secondary-color);margin-bottom:12px;">Product</div>
+        <div style="display:flex;flex-direction:column;gap:9px;font-size:.92rem;">
+          <a href="#features" style="color:var(--bs-body-color);">Features</a>
+          <a href="#protocols" style="color:var(--bs-body-color);">Protocols</a>
+          <a href="#pricing" style="color:var(--bs-body-color);">Pricing</a>
+          <a href="/demo" style="color:var(--bs-body-color);">Live demo</a>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--bs-secondary-color);margin-bottom:12px;">Resources</div>
+        <div style="display:flex;flex-direction:column;gap:9px;font-size:.92rem;">
+          <a href="#how" style="color:var(--bs-body-color);">Quickstart</a>
+          <a href="https://github.com/AlexLuzik/rc-tunnel" target="_blank" rel="noopener" style="color:var(--bs-body-color);">Docs</a>
+          <a href="https://github.com/AlexLuzik/rc-tunnel" target="_blank" rel="noopener" style="color:var(--bs-body-color);">GitHub</a>
+          <a href="/login" style="color:var(--bs-body-color);">Sign in</a>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--bs-secondary-color);margin-bottom:12px;">Project</div>
+        <div style="display:flex;flex-direction:column;gap:9px;font-size:.92rem;">
+          <a href="https://github.com/AlexLuzik/rc-tunnel" target="_blank" rel="noopener" style="color:var(--bs-body-color);">Source</a>
+          <a href="https://github.com/AlexLuzik/rc-tunnel/blob/main/LICENSE" target="_blank" rel="noopener" style="color:var(--bs-body-color);">License (MIT)</a>
+          <a href="#top" style="color:var(--bs-body-color);">Back to top</a>
+        </div>
+      </div>
+    </div>
+    <div style="border-top:1px solid var(--bs-border-color);">
+      <div style="max-width:1140px;margin:0 auto;padding:18px 24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;font-size:.85rem;color:var(--bs-secondary-color);">
+        <span>© 2026 RC-Tunnel · Open source under MIT</span>
+        <span style="display:inline-flex;align-items:center;gap:7px;"><span style="position:relative;display:inline-flex;width:8px;height:8px;"><span style="position:absolute;inset:0;border-radius:50%;background:var(--rc-green-500);animation:rc-pulse 2s ease-in-out infinite;"></span><span style="position:relative;width:8px;height:8px;border-radius:50%;background:var(--rc-green-500);"></span></span>All systems operational</span>
+      </div>
+    </div>
+  </footer>
+
+</div>
+
+<script>
+function rcSyncThemeIcon(){
+  var dark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
+  var i = document.getElementById('rcThemeIcon');
+  if (i) i.className = 'ti ' + (dark ? 'ti-sun' : 'ti-moon');
+}
+function rcToggleTheme(){
+  var el = document.documentElement;
+  var next = el.getAttribute('data-bs-theme') === 'dark' ? 'light' : 'dark';
+  el.setAttribute('data-bs-theme', next);
+  try { localStorage.setItem('rc-theme', next); } catch(e) {}
+  rcSyncThemeIcon();
+}
+function rcToggleFaq(btn){
+  var body = btn.nextElementSibling;
+  var chev = btn.querySelector('.rc-faq-chevron');
+  var open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : 'block';
+  if (chev) chev.style.transform = open ? 'rotate(0deg)' : 'rotate(180deg)';
+}
+function rcCopyInstall(){
+  var cmd = document.getElementById('rcInstall').textContent;
+  try { navigator.clipboard.writeText(cmd); } catch(e) {}
+  var i = document.getElementById('rcCopyIcon');
+  if (i){ i.className = 'ti ti-check'; setTimeout(function(){ i.className = 'ti ti-copy'; }, 1800); }
+}
+rcSyncThemeIcon();
+</script>
+</body>
+</html>

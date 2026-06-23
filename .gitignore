@@ -10,3 +10,6 @@ pki/
 .env
 bin/
 .DS_Store
+
+# design handoff bundles (not source)
+*-handoff.zip

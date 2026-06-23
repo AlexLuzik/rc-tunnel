@@ -179,5 +179,5 @@ def init_db() -> None:
     Base.metadata.create_all(bind=engine)  # ...creating brand-new ones (teams, agents)
     _seed_default_team()
     _seed_system_node()                    # single system node before demo can attach to it
-    if _settings.seed_demo:                # public showcase only; off for self-hosted installs
+    if _settings.demo_mode:                # public demo deployment only; off for normal installs
         _seed_demo()

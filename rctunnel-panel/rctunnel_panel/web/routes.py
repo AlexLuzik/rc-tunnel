@@ -162,6 +162,11 @@ def logout():
 def dashboard(request: Request, db: Session = Depends(get_db)):
     user = _user(request, db)
     if user is None:
+        s = get_settings()
+        if s.demo_mode:   # public demo deployment: anonymous visitors see the landing page
+            return templates.TemplateResponse(request, "landing.html", {
+                "domain": s.public_domain, "base_url": s.public_base_url.rstrip("/"),
+            })
         return RedirectResponse("/login", status_code=303)
     agents_q = select(Agent)
     if user.role.value != "admin":
