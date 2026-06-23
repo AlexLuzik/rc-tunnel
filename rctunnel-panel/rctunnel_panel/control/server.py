@@ -279,6 +279,10 @@ def _clear_prev_serial(agent_id: int) -> None:
     with SessionLocal() as db:
         agent = db.get(Agent, agent_id)
         if agent is not None and agent.prev_cert_serial is not None:
+            # handoff to the new cert is confirmed; the superseded serial is no
+            # longer needed for connectivity, so revoke it at the data plane too.
+            from ..pki import revoke_serial
+            revoke_serial(agent.prev_cert_serial)
             agent.prev_cert_serial = None
             db.commit()
 

@@ -180,6 +180,29 @@ func (s *Server) releaseCN(cn string) {
 	s.release()
 }
 
+// acquireCNOnly takes just a per-identity slot (the global slot is already held by
+// the accept loop) — used by the vhost path, where the owner CN is known only
+// after the Host lookup. releaseCNOnly returns it.
+func (s *Server) acquireCNOnly(cn string) bool {
+	s.cnMu.Lock()
+	defer s.cnMu.Unlock()
+	if s.perCN[cn] >= maxConnsPerCN {
+		return false
+	}
+	s.perCN[cn]++
+	return true
+}
+
+func (s *Server) releaseCNOnly(cn string) {
+	s.cnMu.Lock()
+	if s.perCN[cn] <= 1 {
+		delete(s.perCN, cn)
+	} else {
+		s.perCN[cn]--
+	}
+	s.cnMu.Unlock()
+}
+
 type counters struct {
 	in   int64
 	out  int64
@@ -760,6 +783,13 @@ func (s *Server) handleVhost(conn net.Conn) {
 		conn.Close()
 		return
 	}
+	// per-tenant fairness for vhost traffic too (the global slot is already held)
+	if !s.acquireCNOnly(ref.client.cn) {
+		writeStatus(conn, 503, "busy")
+		conn.Close()
+		return
+	}
+	defer s.releaseCNOnly(ref.client.cn)
 	connID := newID()
 	pr := &pairing{pub: conn, ready: make(chan net.Conn, 1), proxy: ref.spec.Name, owner: ref.client.cn}
 	s.pend.Store(connID, pr)

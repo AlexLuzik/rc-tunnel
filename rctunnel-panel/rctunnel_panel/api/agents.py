@@ -14,7 +14,7 @@ from ..config import get_settings
 from ..db import get_db
 from ..deps import check_team_access, current_user, get_ca
 from ..models import Agent, Node, Role, User, _token
-from ..pki import CA
+from ..pki import CA, revoke_serial
 from ..schemas import (
     AgentCreate,
     AgentCreated,
@@ -26,21 +26,6 @@ from ..schemas import (
 )
 
 router = APIRouter()
-
-
-def _revoke_serial(serial: str | None) -> None:
-    """Append a cert serial to the revoked-serials file the data-plane (rctd) reads,
-    so a stolen/replaced cert is rejected at rctd too, not just the panel control
-    plane. Best-effort: a write failure must not block the API action."""
-    if not serial or serial == "revoked":
-        return
-    try:
-        from pathlib import Path
-        p = Path(get_settings().pki_dir) / "revoked-serials"
-        with p.open("a", encoding="ascii") as f:
-            f.write(serial.strip() + "\n")
-    except Exception:  # noqa: BLE001
-        pass
 
 
 def _install_command(token: str) -> str:
@@ -106,7 +91,7 @@ def delete_agent(agent_id: int, db: Session = Depends(get_db),
     if agent is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "agent not found")
     check_team_access(agent.team_id, user)
-    _revoke_serial(agent.cert_serial)   # reject the deleted agent's cert at rctd too
+    revoke_serial(agent.cert_serial)   # reject the deleted agent's cert at rctd too
     db.delete(agent)
     db.commit()
     return Response(status_code=204)
@@ -123,7 +108,7 @@ def reissue_token(agent_id: int, db: Session = Depends(get_db),
     if agent is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "agent not found")
     check_team_access(agent.team_id, user)
-    _revoke_serial(agent.cert_serial)   # add the old serial to the data-plane denylist
+    revoke_serial(agent.cert_serial)   # add the old serial to the data-plane denylist
     agent.agent_token = _token()
     agent.token_used = False
     # Force-revoke the current cert too: a non-empty sentinel serial matches no real

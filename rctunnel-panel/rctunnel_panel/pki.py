@@ -23,6 +23,21 @@ _SERVER_VALID_DAYS = 825
 _RENEW_BEFORE_DAYS = 30   # re-issue the server cert this long before it expires
 
 
+def revoke_serial(serial: str | None) -> None:
+    """Append a cert serial (decimal, matching rctd's SerialNumber.String()) to the
+    revoked-serials file the data-plane reads, so a stolen/superseded cert is
+    rejected at rctd too. Best-effort — a write failure must not block the caller."""
+    if not serial or serial == "revoked":
+        return
+    try:
+        from .config import get_settings
+        p = Path(get_settings().pki_dir) / "revoked-serials"
+        with p.open("a", encoding="ascii") as f:
+            f.write(serial.strip() + "\n")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def cert_days_left(crt_path: Path) -> int | None:
     """Days until the cert at crt_path expires, or None if it can't be read."""
     try:
