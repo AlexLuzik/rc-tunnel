@@ -73,6 +73,7 @@ def _auto_migrate() -> None:
     """Idempotently add missing columns to existing tables (SQLite ADD COLUMN)."""
     insp = inspect(engine)
     existing_tables = set(insp.get_table_names())
+    pre_agents = {c["name"] for c in insp.get_columns("agents")} if "agents" in existing_tables else set()
     with engine.begin() as conn:
         for table, cols in _ADDED_COLUMNS.items():
             if table not in existing_tables:
@@ -81,6 +82,12 @@ def _auto_migrate() -> None:
             for name, ddl in cols.items():
                 if name not in have:
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
+        # One-time when token_used is first added: burn the token of agents that
+        # already enrolled (they renew over mTLS now and would never re-enroll to
+        # set it). Runs only on the add, so it won't clobber a later reissue.
+        if "agents" in existing_tables and "token_used" not in pre_agents:
+            conn.execute(text("UPDATE agents SET token_used=1 "
+                              "WHERE agent_version IS NOT NULL OR last_seen IS NOT NULL"))
         # rename legacy frp-named node columns -> engine-neutral (idempotent)
         if "nodes" in existing_tables:
             ncols = {c["name"] for c in insp.get_columns("nodes")}
